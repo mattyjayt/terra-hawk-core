@@ -1,0 +1,18 @@
+[project]
+name = "terra-hawk"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiortc>=1.14.0",
+    "fastapi>=0.136.0",
+    "ncnn>=1.0.20260114",
+    "opencv-python>=4.13.0.92",
+    "paho-mqtt>=2.1.0",
+    "pnnx>=20260409",
+    "supervision>=0.27.0.post2",
+    "ultralytics>=8.4.39",
+    "uvicorn>=0.44.0",
+    "websockets>=16.0",
+]
