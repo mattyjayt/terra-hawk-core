@@ -10,3 +10,9 @@ cv_state = {
     "resolution": None,
     "objects": []
 }
+
+inference_stats = {
+    "fps": 0,
+    "latency_ms": 0,
+    "active_tracks": 0,
+}
