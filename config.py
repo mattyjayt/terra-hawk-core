@@ -7,6 +7,12 @@ load_dotenv()
 
 _lock = threading.Lock()
 
+# RF-DETR models available via the rfdetr package (no local files needed)
+RFDETR_REGISTRY = {
+    "rfdetr-nano": {"name": "rfdetr-nano", "format": "rfdetr", "file": "rf-detr-nano.pth (auto-downloaded)", "size_mb": 349.0},
+    "rfdetr-small": {"name": "rfdetr-small", "format": "rfdetr", "file": "rf-detr-small.pth (auto-downloaded)", "size_mb": 349.0},
+}
+
 _defaults = {
     "model": os.getenv("MODEL", "yolo26n"),
     "imgsz": int(os.getenv("IMGSZ", 640)),
@@ -16,7 +22,6 @@ _defaults = {
 
 _config = {**_defaults}
 
-# Tracks whether a model swap has been requested
 _model_swap_requested = False
 _model_swap_target = None
 
@@ -61,7 +66,6 @@ def update_config(patch: dict) -> dict:
 
 
 def consume_model_swap():
-    """Called by inference thread to check if a model swap was requested."""
     global _model_swap_requested, _model_swap_target
     with _lock:
         if _model_swap_requested:
@@ -74,11 +78,13 @@ def list_models() -> list[dict]:
     base = os.path.dirname(os.path.abspath(__file__))
     models = []
 
+    # Local .pt files (YOLO)
     for pt in glob.glob(os.path.join(base, "*.pt")):
         name = os.path.basename(pt).removesuffix(".pt")
         size_mb = os.path.getsize(pt) / (1024 * 1024)
         models.append({"name": name, "format": "pytorch", "file": os.path.basename(pt), "size_mb": round(size_mb, 1)})
 
+    # Local NCNN model directories
     for d in glob.glob(os.path.join(base, "*_ncnn_model")):
         if os.path.isdir(d):
             name = os.path.basename(d)
@@ -86,10 +92,17 @@ def list_models() -> list[dict]:
             size_mb = total / (1024 * 1024)
             models.append({"name": name, "format": "ncnn", "file": os.path.basename(d), "size_mb": round(size_mb, 1)})
 
+    # RF-DETR models (always available via package)
+    for entry in RFDETR_REGISTRY.values():
+        models.append({**entry})
+
     return models
 
 
 def _model_exists(name: str) -> bool:
+    # RF-DETR models are always available
+    if name.lower() in RFDETR_REGISTRY:
+        return True
     base = os.path.dirname(os.path.abspath(__file__))
     return (
         os.path.isfile(os.path.join(base, f"{name}.pt"))

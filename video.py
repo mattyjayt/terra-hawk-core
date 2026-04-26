@@ -6,6 +6,7 @@ import time
 from data_models import cv_state, inference_stats
 from config import get_config, consume_model_swap
 from ultralytics import YOLO
+from rfdetr import RFDETRNano, RFDETRSmall
 import supervision as sv
 
 load_dotenv()
@@ -14,13 +15,64 @@ RTSP_URL = f"rtsp://{os.getenv('HOST', 'localhost')}:8554/stream"
 RECONNECT_DELAY = float(os.getenv("RECONNECT_DELAY", 3))
 MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES", 10))
 
+# ── Model registry ──────────────────────────────────────────────────────────
+
+RFDETR_MODELS = {
+    "rfdetr-nano": RFDETRNano,
+    "rfdetr-small": RFDETRSmall,
+}
+
+
+def is_rfdetr(name: str) -> bool:
+    return name.lower() in RFDETR_MODELS
+
+
+def load_model(name: str):
+    """Load a YOLO or RF-DETR model by name."""
+    if is_rfdetr(name):
+        cls = RFDETR_MODELS[name.lower()]
+        return cls(device="cpu")
+    return YOLO(name, task="detect")
+
+
+def get_class_names(model) -> list[str]:
+    """Get class name list from either model type."""
+    if hasattr(model, "class_names"):
+        return model.class_names        # RF-DETR
+    if hasattr(model, "names"):
+        return list(model.names.values())  # YOLO (dict {0: 'person', ...})
+    return []
+
+
+def run_inference(model, frame, cfg: dict) -> sv.Detections:
+    """Run detection on a frame. Returns sv.Detections for either model type."""
+    if hasattr(model, "class_names"):
+        # RF-DETR — returns sv.Detections directly
+        return model.predict(frame, threshold=cfg["confidence"])
+    else:
+        # YOLO — returns ultralytics Results, convert to sv.Detections
+        result = model(
+            source=frame,
+            imgsz=cfg["imgsz"],
+            conf=cfg["confidence"],
+            iou=cfg["iou"],
+            verbose=False,
+        )[0]
+        return sv.Detections.from_ultralytics(result)
+
+
+# ── Shared state ────────────────────────────────────────────────────────────
+
 _model_lock = threading.Lock()
-model = YOLO(get_config()["model"], task="detect")
+_initial_config = get_config()
+model = load_model(_initial_config["model"])
 tracker = sv.ByteTrack()
 
 _latest_frame = None
 _frame_lock = threading.Lock()
 
+
+# ── Reader thread ───────────────────────────────────────────────────────────
 
 def open_capture() -> cv2.VideoCapture:
     while True:
@@ -57,6 +109,8 @@ def reader_thread():
             _latest_frame = frame
 
 
+# ── Inference thread ────────────────────────────────────────────────────────
+
 def inference_thread():
     global _latest_frame, model, tracker
 
@@ -66,7 +120,7 @@ def inference_thread():
         if swap_target is not None:
             print(f"[CV] Hot-swapping model to: {swap_target}")
             try:
-                new_model = YOLO(swap_target, task="detect")
+                new_model = load_model(swap_target)
                 with _model_lock:
                     model = new_model
                     tracker = sv.ByteTrack()
@@ -86,11 +140,10 @@ def inference_thread():
 
         t0 = time.time()
         with _model_lock:
-            result = model(source=frame, imgsz=cfg["imgsz"], conf=cfg["confidence"], iou=cfg["iou"], verbose=False)[0]
-            current_model = model
+            detections = run_inference(model, frame, cfg)
+            class_names = get_class_names(model)
         t1 = time.time()
 
-        detections = sv.Detections.from_ultralytics(result)
         detections = tracker.update_with_detections(detections)
 
         latency_ms = (t1 - t0) * 1000
@@ -101,25 +154,26 @@ def inference_thread():
             detections.xyxy,
             detections.class_id,
             detections.confidence,
-            detections.tracker_id
+            detections.tracker_id,
         ):
             x1, y1, x2, y2 = box
+            label = class_names[int(class_id)] if int(class_id) < len(class_names) else f"class_{class_id}"
             objects.append({
                 "id": int(tracker_id) if tracker_id is not None else None,
-                "label": current_model.names[int(class_id)],
+                "label": label,
                 "confidence": round(float(confidence), 3),
                 "bbox": {
                     "x": float(x1 / w),
                     "y": float(y1 / h),
                     "width": float((x2 - x1) / w),
-                    "height": float((y2 - y1) / h)
-                }
+                    "height": float((y2 - y1) / h),
+                },
             })
 
         cv_state.update({
             "timestamp": time.time(),
             "resolution": f"{w}x{h}",
-            "objects": objects
+            "objects": objects,
         })
 
         inference_stats.update({
