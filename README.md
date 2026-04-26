@@ -1,20 +1,37 @@
-# MediaMTX — Raspberry Pi Camera Streaming
+# 🦅 TerraHawk — Edge CV & IoT Backend
 
-MediaMTX (formerly `rtsp-simple-server`) is a media server that captures directly from the Raspberry Pi camera module via libcamera and re-streams it over RTSP, WebRTC, HLS, RTMP, and SRT — without needing external tools like `rpicam-vid` or `ffmpeg`.
+TerraHawk is the edge backend for a smart farm monitoring platform, running on a Raspberry Pi 5. It combines **real-time computer vision** (object detection + tracking) with **IoT sensor ingestion** via MQTT, serving everything through a **FastAPI** backend over WebSockets to the [TerraHawk frontend](https://github.com/your-org/terra-hawk-frontend).
 
 ---
 
-## Prerequisites
+## Architecture
 
-- Raspberry Pi OS **Bookworm** (64-bit recommended)
-- Raspberry Pi Camera Module (v2, v3, or HQ) connected and enabled
-- `libcamera` installed and working — verify with:
-
-```bash
-rpicam-hello
+```
+┌──────────────┐       MQTT (pub)       ┌──────────────────────────────────────────┐
+│   ESP32 MCU  │ ────────────────────►  │          Raspberry Pi 5                  │
+│  (sensors)   │   pi/inbox             │                                          │
+└──────────────┘                        │  ┌─────────────┐    ┌────────────────┐   │
+                                        │  │  Mosquitto   │    │   MediaMTX      │   │
+┌──────────────┐       WebSocket        │  │  (MQTT 1883) │    │  (RTSP 8554)   │   │
+│   Frontend   │ ◄──────────────────    │  └──────┬──────┘    └───────┬────────┘   │
+│  (React/TS)  │   /ws/sensors          │         │                   │            │
+│              │   /ws/cv               │  ┌──────▼───────────────────▼────────┐   │
+│              │                        │  │         FastAPI (main.py)          │   │
+│              │                        │  │  ┌────────────┐  ┌─────────────┐  │   │
+│              │                        │  │  │ MQTT Client │  │ Video/YOLO  │  │   │
+│              │                        │  │  │ (sensors)   │  │ (detection  │  │   │
+│              │                        │  │  │             │  │  + tracking)│  │   │
+│              │                        │  │  └────────────┘  └─────────────┘  │   │
+│              │                        │  └───────────────────────────────────┘   │
+└──────────────┘                        └──────────────────────────────────────────┘
 ```
 
-If that shows a preview, your camera stack is healthy. If not, check your camera cable and ensure the camera interface is enabled in `raspi-config`.
+**Data flow:**
+
+1. **Camera** → MediaMTX captures via libcamera, serves RTSP at `rtsp://localhost:8554/stream`
+2. **Video pipeline** → Reads RTSP frames, runs YOLOv26n detection + ByteTrack tracking, updates `cv_state`
+3. **ESP32** → Publishes sensor JSON to MQTT topic `pi/inbox`, MQTT client updates `sensor_state`
+4. **Frontend** → Connects via WebSocket to receive both streams in real time
 
 ---
 
@@ -22,67 +39,169 @@ If that shows a preview, your camera stack is healthy. If not, check your camera
 
 ```
 terra_hawk/
-├── mediamtx/
-│   ├── mediamtx               # binary
-│   ├── mediamtx.yml           # customized configuration
-│   └── mediamtx.yml.original  # original config from release (reference)
-├── main.py                    # FastAPI backend
-├── install.sh                 # one-shot install script
-├── start.sh                   # startup script
-└── mediamtx.log               # generated at runtime (gitignored)
+├── main.py              # FastAPI app — WebSocket endpoints & lifecycle
+├── video.py             # RTSP capture, YOLO inference, ByteTrack tracking
+├── mqtt_client.py       # MQTT subscriber — ESP32 sensor ingestion
+├── data_models.py       # Shared state models (sensor_state, cv_state)
+├── export.py            # Model export utility (PyTorch → NCNN)
+├── .env                 # Runtime configuration (model, stream, thresholds)
+├── pyproject.toml       # Project metadata & dependencies (uv)
+├── install.sh           # One-shot MediaMTX installer
+├── start.sh             # Launch script (MediaMTX + FastAPI)
+├── mediamtx/            # MediaMTX binary & config (gitignored)
+│   ├── mediamtx         # Server binary
+│   ├── mediamtx.yml     # Customized config
+│   └── mediamtx.yml.original
+└── .venv/               # Python virtual environment (gitignored)
 ```
 
 ---
 
-## Installation
+## Computer Vision Pipeline
 
-### Option 1 — Quick install (recommended)
+### Detection & Tracking (`video.py`)
 
-Run the provided install script from the project root. It will automatically fetch the latest MediaMTX release, extract it into `mediamtx/`, make the binary executable, and write a pre-configured `mediamtx.yml` with the `stream` path set up for the Raspberry Pi camera.
+The CV pipeline runs two daemon threads launched at FastAPI startup:
 
-```bash
-chmod +x install.sh
-./install.sh
+| Thread | Purpose |
+|---|---|
+| **Reader** | Connects to the RTSP stream, reads frames as fast as possible, keeps only the latest frame (drop-oldest strategy to avoid lag) |
+| **Inference** | Grabs the latest frame, runs YOLO detection, updates detections with ByteTrack, writes results to `cv_state` |
+
+**Model:** [YOLOv26n](https://docs.ultralytics.com/) (nano) via Ultralytics — optimized for edge inference on the Pi's ARM CPU.
+
+**Tracker:** [ByteTrack](https://github.com/roboflow/supervision) via the Supervision library — assigns persistent `tracker_id`s to detected objects across frames.
+
+**Output format** (`cv_state`):
+
+```json
+{
+  "timestamp": 1714142400.123,
+  "resolution": "640x640",
+  "objects": [
+    {
+      "id": 1,
+      "label": "person",
+      "confidence": 0.872,
+      "bbox": {
+        "x": 0.12,
+        "y": 0.34,
+        "width": 0.15,
+        "height": 0.40
+      }
+    }
+  ]
+}
 ```
 
-After it completes you'll have:
+All bounding box coordinates are **normalized** (0.0–1.0) relative to the frame resolution, making them resolution-independent for the frontend.
 
-- `mediamtx/mediamtx` — the binary, ready to run
-- `mediamtx/mediamtx.yml` — customized config with the `stream` path
-- `mediamtx/mediamtx.yml.original` — untouched original from the release, useful as a reference for all available settings
+**Configuration** (`.env`):
 
-Then jump straight to [Running](#running).
+| Variable | Default | Description |
+|---|---|---|
+| `HOST` | `localhost` | RTSP stream host |
+| `RECONNECT_DELAY` | `3` | Seconds to wait before reconnecting on stream failure |
+| `MAX_CONSECUTIVE_FAILURES` | `10` | Frame read failures before triggering reconnect |
+| `MODEL` | `yolo26n` | Ultralytics model name or path (`.pt` / `.ncnn`) |
+| `IMGSZ` | `640` | Inference input resolution |
+| `CONFIDENCE` | `0.5` | Minimum detection confidence threshold |
+| `IOU` | `0.7` | NMS IoU threshold |
+
+### Model Export (`export.py`)
+
+Utility script to export the YOLO model to **NCNN** format with FP16 quantization for faster edge inference:
+
+```bash
+uv run python export.py
+```
+
+This produces an NCNN model directory that can be referenced in `.env` as `MODEL=yolo26n_ncnn_model` for optimized ARM inference.
 
 ---
 
-### Option 2 — Manual install
+## IoT Sensor Ingestion — ESP32 via MQTT
 
-Use this approach if you want full control over the version or configuration, or just want to understand what's happening under the hood.
+### Protocol
 
-**1. Download the release**
+The ESP32 microcontroller publishes sensor readings over **MQTT** to a local Mosquitto broker running on the Pi.
 
-Go to the [MediaMTX releases page](https://github.com/bluenviron/mediamtx/releases) and pick the `linux_arm64` `.tar.gz` for Raspberry Pi OS 64-bit, or `armv7` for 32-bit.
+| Parameter | Value |
+|---|---|
+| **Broker** | `localhost:1883` |
+| **Subscribe topic** | `pi/inbox` (Pi listens) |
+| **Publish topic** | `esp32/inbox` (available for Pi → ESP32 commands) |
+| **QoS** | Default (0) |
 
-```bash
-mkdir -p mediamtx && cd mediamtx
-wget https://github.com/bluenviron/mediamtx/releases/download/vX.X.X/mediamtx_vX.X.X_linux_arm64.tar.gz
-tar -xzf mediamtx_vX.X.X_linux_arm64.tar.gz
-chmod +x mediamtx
+### ESP32 Payload Schema
+
+The ESP32 publishes JSON to `pi/inbox`:
+
+```json
+{
+  "status": "active",
+  "temperature": 24.5,
+  "humidity": 62.3
+}
 ```
 
-> Replace `vX.X.X` with the version you want.
+### Sensor State (`sensor_state`)
 
-**2. Back up the original config**
+The MQTT client parses incoming messages and updates the shared state:
 
-The tarball includes a fully documented `mediamtx.yml`. Keep it as a reference before making changes:
-
-```bash
-cp mediamtx.yml mediamtx.yml.original
+```json
+{
+  "status": "active",
+  "temperature": 24.5,
+  "humidity": 62.3,
+  "soil": 0
+}
 ```
 
-**3. Configure the `paths` section**
+| Field | Type | Source |
+|---|---|---|
+| `status` | `string` | ESP32 (`"active"` / `"idle"`) |
+| `temperature` | `float \| null` | DHT sensor (°C) |
+| `humidity` | `float \| null` | DHT sensor (%) |
+| `soil` | `int` | Soil moisture — reserved (hardcoded `0` pending sensor integration) |
 
-Open `mediamtx.yml` and scroll to the `paths:` section at the bottom. Replace its contents with your path definition. The key setting is `source: rpiCamera`, which tells MediaMTX to capture directly from the camera via libcamera:
+> **Note:** The `soil` field is a placeholder. The soil moisture sensor is planned but not yet wired to the ESP32.
+
+---
+
+## FastAPI Backend (`main.py`)
+
+### Endpoints
+
+| Endpoint | Type | Description |
+|---|---|---|
+| `GET /ping` | HTTP | Health check — returns `{"status": 200, "payload": "Hello, Jaime"}` |
+| `WS /ws/sensors` | WebSocket | Pushes `sensor_state` every **200ms** (~5 updates/sec) |
+| `WS /ws/cv` | WebSocket | Pushes `cv_state` every **20ms** (~50 updates/sec, matching inference rate) |
+
+### Startup
+
+On application startup, `main.py` launches the video pipeline threads (reader + inference) via `start_thread()`. The MQTT client is initialized at module import and begins listening immediately.
+
+CORS is fully open (`allow_origins=["*"]`) for development — the frontend connects from a separate host.
+
+---
+
+## MediaMTX — Camera Streaming
+
+MediaMTX captures directly from the Raspberry Pi Camera Module via libcamera and serves the stream over multiple protocols.
+
+### Stream URLs
+
+| Protocol | URL |
+|---|---|
+| RTSP | `rtsp://<pi-ip>:8554/stream` |
+| WebRTC | `http://<pi-ip>:8889/stream` |
+| HLS | `http://<pi-ip>:8888/stream` |
+
+### Camera Configuration
+
+Default settings in `mediamtx.yml`:
 
 ```yaml
 paths:
@@ -91,86 +210,134 @@ paths:
     rpiCameraWidth: 640
     rpiCameraHeight: 640
     rpiCameraFPS: 15
-
-  all_others:
 ```
 
-Everything above `paths:` in the file (global settings, protocol config, auth, etc.) can be left at its defaults or adjusted as needed. The original `mediamtx.yml.original` documents every available option with inline comments.
-
-**Useful `rpiCamera` settings**
-
-| Setting | Description |
-|---|---|
-| `rpiCameraWidth` / `rpiCameraHeight` | Frame resolution |
-| `rpiCameraFPS` | Frames per second |
-| `rpiCameraHFlip` / `rpiCameraVFlip` | Flip the image |
-| `rpiCameraBitrate` | Encoding bitrate in bits/s (default: `5000000`) |
-| `rpiCameraAfMode` | Autofocus mode: `auto`, `manual`, `continuous` |
-| `rpiCameraExposure` | Exposure mode: `normal`, `short`, `long` |
-| `sourceOnDemand: true` | Only activate the camera when a client connects |
+See the `mediamtx.yml.original` file for all available `rpiCamera*` settings (resolution, FPS, autofocus, bitrate, flip, etc.).
 
 ---
 
-## Stream URLs
+## Prerequisites
 
-Once running, the stream is available on the following endpoints. Replace `localhost` with the Pi's IP address for remote access:
+- **Raspberry Pi 5** (8GB recommended) running Pi OS Bookworm 64-bit
+- **Raspberry Pi Camera Module** (v2/v3/HQ) — verify with `rpicam-hello`
+- **Mosquitto MQTT broker** — install with `sudo apt install mosquitto`
+- **ESP32** with DHT temperature/humidity sensor, flashed with MQTT publish firmware
+- **[uv](https://docs.astral.sh/uv/)** — Python package manager
 
-| Protocol | URL |
-|---|---|
-| RTSP | `rtsp://localhost:8554/stream` |
-| WebRTC (browser) | `http://localhost:8889/stream` |
-| HLS | `http://localhost:8888/stream` |
+---
 
-The FastAPI backend reads from the RTSP endpoint locally:
+## Installation
 
-```python
-cap = cv2.VideoCapture("rtsp://localhost:8554/stream")
+### 1. Clone & install dependencies
+
+```bash
+git clone https://github.com/your-org/terra-hawk-backend.git
+cd terra-hawk-backend
+uv sync
+```
+
+### 2. Install MediaMTX
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+This fetches the latest MediaMTX release, extracts it to `mediamtx/`, and patches the config for the Pi camera.
+
+### 3. Configure `.env`
+
+```env
+HOST=localhost
+RECONNECT_DELAY=3
+MAX_CONSECUTIVE_FAILURES=10
+MODEL=yolo26n
+IMGSZ=640
+CONFIDENCE=0.5
+IOU=0.7
+```
+
+### 4. Start Mosquitto
+
+```bash
+sudo systemctl start mosquitto
 ```
 
 ---
 
 ## Running
 
-Use `start.sh` to launch both MediaMTX and the FastAPI backend together:
-
 ```bash
 chmod +x start.sh   # first time only
 ./start.sh
 ```
 
-This will:
+This launches:
+1. **MediaMTX** in the background (camera → RTSP stream, logs to `mediamtx/mediamtx.log`)
+2. **FastAPI** via uvicorn in the foreground (with hot reload)
 
-1. Start `mediamtx` in the background using `mediamtx/mediamtx.yml`
-2. Write mediamtx logs to `mediamtx/mediamtx.log`
-3. Start `uvicorn main:app --reload` in the foreground
-4. Kill mediamtx cleanly on `Ctrl+C`
+Press `Ctrl+C` to shut down both processes cleanly.
+
+The API is available at `http://<pi-ip>:8000`.
+
+---
+
+## Git Ignored
+
+The following are excluded from version control to save space:
+
+| Path | Reason |
+|---|---|
+| `mediamtx/` | Large binary (~30MB), installed via `install.sh` |
+| `*.pt` | PyTorch model weights (downloaded by Ultralytics on first run) |
+| `.venv/` | Python virtual environment |
+| `.env` | Local configuration |
+| `*.log` | Runtime logs |
+| `__pycache__/` | Python bytecode |
+
+---
+
+## Dependencies
+
+From `pyproject.toml` (Python ≥ 3.12):
+
+| Package | Purpose |
+|---|---|
+| `fastapi` + `uvicorn` | Async web framework & ASGI server |
+| `ultralytics` | YOLOv26 model loading & inference |
+| `supervision` | ByteTrack object tracking + detection utilities |
+| `opencv-python` | RTSP frame capture & image processing |
+| `paho-mqtt` | MQTT client for ESP32 sensor data |
+| `ncnn` + `pnnx` | NCNN inference backend & model converter |
+| `python-dotenv` | `.env` file loading |
+| `aiortc` | WebRTC support |
+| `websockets` | WebSocket protocol support |
 
 ---
 
 ## Troubleshooting
 
-**`path 'stream' is not configured`**
-MediaMTX is running but not reading the config file. Ensure `start.sh` passes the config path explicitly to the binary:
-```bash
-"$MEDIAMTX" "$MEDIAMTX_CONF" >"$MEDIAMTX_LOG" 2>&1 &
-```
+| Issue | Cause | Fix |
+|---|---|---|
+| `path 'stream' is not configured` | MediaMTX not reading config | Check `start.sh` passes config path to binary |
+| `WAR configuration file not found` | Binary falling back to CWD | Verify `MEDIAMTX_CONF` path in `start.sh` |
+| `ERR [RPI Camera source] process exited` | libcamera not working | Run `rpicam-hello` to diagnose |
+| Stream connects but drops | Bad resolution/FPS or cable | Check `mediamtx.log` |
+| No sensor data | Mosquitto not running or ESP32 offline | `sudo systemctl status mosquitto` |
+| YOLO model download fails | No internet on Pi | Pre-download `.pt` on another machine, copy over |
 
-**`WAR configuration file not found`**
-Same root cause as above — the binary is falling back to looking in the working directory. Check the `MEDIAMTX_CONF` variable in `start.sh` points to `mediamtx/mediamtx.yml`.
+---
 
-**`ERR [RPI Camera source] process exited unexpectedly`**
-libcamera is not installed or not functioning. Run `rpicam-hello` to diagnose. On Bookworm, `libcamera0.2` should be present:
-```bash
-apt-cache policy libcamera0.2
-```
+## License
 
-**Stream connects but immediately drops**
-Check `mediamtx.log` for details. Common causes are an unsupported resolution/FPS combination for your camera module, or a faulty camera cable.
+MIT
 
 ---
 
 ## References
 
-- [Raspberry Pi — Streaming with MediaMTX](https://www.raspberrypi.com/documentation/computers/camera_software.html#streaming-with-mediamtx)
-- [MediaMTX GitHub](https://github.com/bluenviron/mediamtx)
-- [MediaMTX Docs — Raspberry Pi Cameras](https://mediamtx.org/docs/usage/publish/raspberry-pi-cameras)
+- [MediaMTX — Raspberry Pi Cameras](https://mediamtx.org/docs/usage/publish/raspberry-pi-cameras)
+- [Ultralytics YOLO Docs](https://docs.ultralytics.com/)
+- [Supervision — ByteTrack](https://supervision.roboflow.com/latest/trackers/)
+- [Paho MQTT Python](https://eclipse.dev/paho/files/paho.mqtt.python/html/)
+- [FastAPI WebSockets](https://fastapi.tiangolo.com/advanced/websockets/)

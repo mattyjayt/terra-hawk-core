@@ -11,3 +11,4 @@ wheels/
 mediamtx/
 # Virtual environments
 .venv
+.env

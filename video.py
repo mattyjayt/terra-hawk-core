@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import cv2
 import threading
 import time
@@ -5,11 +7,17 @@ from data_models import cv_state
 from ultralytics import YOLO
 import supervision as sv
 
-RTSP_URL = "rtsp://localhost:8554/stream"
-RECONNECT_DELAY = 3.0
-MAX_CONSECUTIVE_FAILURES = 10
+load_dotenv()
 
-model = YOLO("yolo26n", task="detect")
+RTSP_URL = f"rtsp://{os.getenv("HOST")}:8554/stream"
+RECONNECT_DELAY = int(os.getenv("RECONNECT_DELAY"))
+MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES"))
+VISION_MODEL = os.getenv("MODEL")
+IMGSZ = int(os.getenv("IMGSZ"))
+CONFIDENCE = float(os.getenv("CONFIDENCE"))
+IOU = float(os.getenv("IOU"))
+
+model = YOLO(VISION_MODEL, task="detect")
 tracker = sv.ByteTrack()
 
 # Shared state between reader and inference threads
@@ -67,7 +75,7 @@ def inference_thread():
 
         h, w, _ = frame.shape
 
-        result = model(source=frame, imgsz=640, conf= 0.5, iou=0.7, verbose=False)[0]
+        result = model(source=frame, imgsz=IMGSZ, conf=CONFIDENCE, iou=IOU, verbose=False)[0]
         detections = sv.Detections.from_ultralytics(result)
         detections = tracker.update_with_detections(detections)
 
