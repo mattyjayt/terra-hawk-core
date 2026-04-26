@@ -1,5 +1,5 @@
 from ultralytics import YOLO
 
-model = YOLO("yolov8n")
+model = YOLO("yolo26n")
 
-model.export(format="onnx", int8=True, device="cpu")
+model.export(format="ncnn", half=True)

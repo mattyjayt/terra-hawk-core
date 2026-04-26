@@ -10,9 +10,10 @@ REMOTE_TOPIC    = "esp32/inbox"
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
+        sensor_state["status"] = payload.get("status", "idle")
         sensor_state["temperature"] = payload.get("temperature", None)
         sensor_state["humidity"] = payload.get("humidity", None)
-        sensor_state["status"] = payload.get("status", "idle")
+        sensor_state["soil"] = 0
     except json.JSONDecodeError:
         raise(f"[ESP32 - Payload]: {msg.payload.decode()}")
 

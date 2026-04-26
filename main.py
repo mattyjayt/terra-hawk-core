@@ -45,7 +45,7 @@ async def cv_websocket(ws: WebSocket):
     try:
         while True:
             await ws.send_json(cv_state)
-            await asyncio.sleep(0.033)  # ~30fps push rate
+            await asyncio.sleep(0.02)  # ~30fps push rate
     except:
         clients.remove(ws)
 

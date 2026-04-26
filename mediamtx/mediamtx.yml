@@ -186,7 +186,7 @@ apiTrustedProxies: []
 # Global settings -> Metrics
 
 # Allow clients to extract Prometheus-compatible metrics.
-metrics: true
+metrics: false
 # Address of the metrics HTTP listener.
 metricsAddress: :9998
 # Enable HTTPS on the Metrics server.
@@ -797,16 +797,12 @@ pathDefaults:
 # for example "~^(test1|test2)$" will match both "test1" and "test2",
 # for example "~^prefix" will match all paths that start with "prefix".
 paths:
-  cam:
-    source: rpiCamera
-    sourceOnDemand: yes
-    rpiCameraWidth: 640 #1920
-    rpiCameraHeight: 640 #1080
-    rpiCameraFPS: 20 #30
-    rpiCameraTextOverlayEnable: false
   # example:
-  # my_camera:
-  #   source: rtsp://my_camera
+  stream:
+    source: rpiCamera
+    rpiCameraWidth: 640
+    rpiCameraHeight: 640
+    rpiCameraFPS: 15
 
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
