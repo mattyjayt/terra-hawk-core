@@ -1,6 +1,6 @@
 # MediaMTX — Raspberry Pi Camera Streaming
 
-MediaMTX (formerly `rtsp-simple-server`) is a media server that can capture directly from the Raspberry Pi camera module via libcamera and re-stream it over RTSP, WebRTC, HLS, RTMP, and SRT — all without needing external tools like `rpicam-vid` or `ffmpeg`.
+MediaMTX (formerly `rtsp-simple-server`) is a media server that captures directly from the Raspberry Pi camera module via libcamera and re-streams it over RTSP, WebRTC, HLS, RTMP, and SRT — without needing external tools like `rpicam-vid` or `ffmpeg`.
 
 ---
 
@@ -23,34 +23,66 @@ If that shows a preview, your camera stack is healthy. If not, check your camera
 ```
 terra_hawk/
 ├── mediamtx/
-│   ├── mediamtx          # binary
-│   └── mediamtx.yml      # configuration
-├── main.py               # FastAPI backend
-├── start.sh              # startup script
-└── mediamtx.log          # generated at runtime (gitignored)
+│   ├── mediamtx               # binary
+│   ├── mediamtx.yml           # customized configuration
+│   └── mediamtx.yml.original  # original config from release (reference)
+├── main.py                    # FastAPI backend
+├── install.sh                 # one-shot install script
+├── start.sh                   # startup script
+└── mediamtx.log               # generated at runtime (gitignored)
 ```
 
 ---
 
 ## Installation
 
-Download the latest release from the [MediaMTX releases page](https://github.com/bluenviron/mediamtx/releases). For Raspberry Pi OS 64-bit, pick the `linux_arm64` `.tar.gz` file.
+### Option 1 — Quick install (recommended)
+
+Run the provided install script from the project root. It will automatically fetch the latest MediaMTX release, extract it into `mediamtx/`, make the binary executable, and write a pre-configured `mediamtx.yml` with the `stream` path set up for the Raspberry Pi camera.
 
 ```bash
-mkdir -p mediamtx
-cd mediamtx
-wget https://github.com/bluenviron/mediamtx/releases/latest/download/mediamtx_vX.X.X_linux_arm64.tar.gz
+chmod +x install.sh
+./install.sh
+```
+
+After it completes you'll have:
+
+- `mediamtx/mediamtx` — the binary, ready to run
+- `mediamtx/mediamtx.yml` — customized config with the `stream` path
+- `mediamtx/mediamtx.yml.original` — untouched original from the release, useful as a reference for all available settings
+
+Then jump straight to [Running](#running).
+
+---
+
+### Option 2 — Manual install
+
+Use this approach if you want full control over the version or configuration, or just want to understand what's happening under the hood.
+
+**1. Download the release**
+
+Go to the [MediaMTX releases page](https://github.com/bluenviron/mediamtx/releases) and pick the `linux_arm64` `.tar.gz` for Raspberry Pi OS 64-bit, or `armv7` for 32-bit.
+
+```bash
+mkdir -p mediamtx && cd mediamtx
+wget https://github.com/bluenviron/mediamtx/releases/download/vX.X.X/mediamtx_vX.X.X_linux_arm64.tar.gz
 tar -xzf mediamtx_vX.X.X_linux_arm64.tar.gz
 chmod +x mediamtx
 ```
 
-> Replace `vX.X.X` with the actual version number.
+> Replace `vX.X.X` with the version you want.
 
----
+**2. Back up the original config**
 
-## Configuration (`mediamtx/mediamtx.yml`)
+The tarball includes a fully documented `mediamtx.yml`. Keep it as a reference before making changes:
 
-The key setting that enables native camera capture is `source: rpiCamera` under `paths`. MediaMTX will control the camera directly via libcamera without needing any external process.
+```bash
+cp mediamtx.yml mediamtx.yml.original
+```
+
+**3. Configure the `paths` section**
+
+Open `mediamtx.yml` and scroll to the `paths:` section at the bottom. Replace its contents with your path definition. The key setting is `source: rpiCamera`, which tells MediaMTX to capture directly from the camera via libcamera:
 
 ```yaml
 paths:
@@ -59,26 +91,29 @@ paths:
     rpiCameraWidth: 640
     rpiCameraHeight: 640
     rpiCameraFPS: 15
+
+  all_others:
 ```
 
-### Useful optional settings
+Everything above `paths:` in the file (global settings, protocol config, auth, etc.) can be left at its defaults or adjusted as needed. The original `mediamtx.yml.original` documents every available option with inline comments.
+
+**Useful `rpiCamera` settings**
 
 | Setting | Description |
 |---|---|
 | `rpiCameraWidth` / `rpiCameraHeight` | Frame resolution |
 | `rpiCameraFPS` | Frames per second |
 | `rpiCameraHFlip` / `rpiCameraVFlip` | Flip the image |
-| `rpiCameraBitrate` | Encoding bitrate in bits/s (default: 5000000) |
+| `rpiCameraBitrate` | Encoding bitrate in bits/s (default: `5000000`) |
 | `rpiCameraAfMode` | Autofocus mode: `auto`, `manual`, `continuous` |
-| `sourceOnDemand: true` | Only activate the camera when a client is connected |
-
-Consult the full `mediamtx.yml` for all available `rpiCamera*` options.
+| `rpiCameraExposure` | Exposure mode: `normal`, `short`, `long` |
+| `sourceOnDemand: true` | Only activate the camera when a client connects |
 
 ---
 
 ## Stream URLs
 
-Once running, the stream is available on the following endpoints (replace `localhost` with the Pi's IP for remote access):
+Once running, the stream is available on the following endpoints. Replace `localhost` with the Pi's IP address for remote access:
 
 | Protocol | URL |
 |---|---|
@@ -86,7 +121,7 @@ Once running, the stream is available on the following endpoints (replace `local
 | WebRTC (browser) | `http://localhost:8889/stream` |
 | HLS | `http://localhost:8888/stream` |
 
-The Python backend reads from the RTSP endpoint locally:
+The FastAPI backend reads from the RTSP endpoint locally:
 
 ```python
 cap = cv2.VideoCapture("rtsp://localhost:8554/stream")
@@ -96,7 +131,7 @@ cap = cv2.VideoCapture("rtsp://localhost:8554/stream")
 
 ## Running
 
-Use the provided `start.sh` script to start both MediaMTX and the FastAPI backend together:
+Use `start.sh` to launch both MediaMTX and the FastAPI backend together:
 
 ```bash
 chmod +x start.sh   # first time only
@@ -104,32 +139,33 @@ chmod +x start.sh   # first time only
 ```
 
 This will:
-1. Start `mediamtx` in the background using the config in `mediamtx/mediamtx.yml`
-2. Log mediamtx output to `mediamtx.log`
-3. Start `uvicorn` in the foreground with `--reload`
-4. Kill mediamtx cleanly when you press `Ctrl+C`
+
+1. Start `mediamtx` in the background using `mediamtx/mediamtx.yml`
+2. Write mediamtx logs to `mediamtx.log`
+3. Start `uvicorn main:app --reload` in the foreground
+4. Kill mediamtx cleanly on `Ctrl+C`
 
 ---
 
 ## Troubleshooting
 
 **`path 'stream' is not configured`**
-MediaMTX is running but ignoring the config file. Make sure the config path is passed explicitly to the binary (handled in `start.sh`).
-
-**`ERR [RPI Camera source] process exited unexpectedly`**
-libcamera is not installed or not working. Run `rpicam-hello` to diagnose. On Bookworm, `libcamera0.2` should be present — check with:
-```bash
-apt-cache policy libcamera0.2
-```
-
-**`WAR configuration file not found`**
-The binary is not receiving the config path argument. Check `start.sh` contains:
+MediaMTX is running but not reading the config file. Ensure `start.sh` passes the config path explicitly to the binary:
 ```bash
 "$MEDIAMTX" "$MEDIAMTX_CONF" >"$MEDIAMTX_LOG" 2>&1 &
 ```
 
+**`WAR configuration file not found`**
+Same root cause as above — the binary is falling back to looking in the working directory. Check the `MEDIAMTX_CONF` variable in `start.sh` points to `mediamtx/mediamtx.yml`.
+
+**`ERR [RPI Camera source] process exited unexpectedly`**
+libcamera is not installed or not functioning. Run `rpicam-hello` to diagnose. On Bookworm, `libcamera0.2` should be present:
+```bash
+apt-cache policy libcamera0.2
+```
+
 **Stream connects but immediately drops**
-Check `mediamtx.log` for the specific error. Common causes are resolution/FPS combinations the camera module doesn't support, or a bad camera cable.
+Check `mediamtx.log` for details. Common causes are an unsupported resolution/FPS combination for your camera module, or a faulty camera cable.
 
 ---
 

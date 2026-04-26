@@ -9,7 +9,7 @@ RTSP_URL = "rtsp://localhost:8554/stream"
 RECONNECT_DELAY = 3.0
 MAX_CONSECUTIVE_FAILURES = 10
 
-model = YOLO("./yolo26n_ncnn_model", task="detect")
+model = YOLO("yolo26n", task="detect")
 tracker = sv.ByteTrack()
 
 # Shared state between reader and inference threads

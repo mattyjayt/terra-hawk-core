@@ -8,5 +8,6 @@ wheels/
 *_model
 *.log
 *.pt
+mediamtx
 # Virtual environments
 .venv
