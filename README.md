@@ -1,37 +1,117 @@
 # 🦅 TerraHawk — Edge CV & IoT Backend
 
-TerraHawk is the edge backend for a smart farm monitoring platform, running on a Raspberry Pi 5. It combines **real-time computer vision** (object detection + tracking) with **IoT sensor ingestion** via MQTT, serving everything through a **FastAPI** backend over WebSockets to the [TerraHawk frontend](https://github.com/your-org/terra-hawk-frontend).
+TerraHawk is a distributed edge backend for a smart farm monitoring platform. It combines **real-time computer vision** (object detection + tracking) with **IoT sensor ingestion** via MQTT, serving everything through a **FastAPI** backend over WebSockets to the [TerraHawk frontend](https://github.com/your-org/verdant-precision).
+
+The system supports **multiple distributed systems** — each with its own controller, camera, sensors, and actuators — managed through a central registry.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────┐       MQTT (pub)       ┌──────────────────────────────────────────┐
-│   ESP32 MCU  │ ────────────────────►  │          Raspberry Pi 5                  │
-│  (sensors)   │   pi/inbox             │                                          │
-└──────────────┘                        │  ┌─────────────┐    ┌────────────────┐   │
-                                        │  │  Mosquitto   │    │   MediaMTX      │   │
-┌──────────────┐       WebSocket        │  │  (MQTT 1883) │    │  (RTSP 8554)   │   │
-│   Frontend   │ ◄──────────────────    │  └──────┬──────┘    └───────┬────────┘   │
-│  (React/TS)  │   /ws/sensors          │         │                   │            │
-│              │   /ws/cv               │  ┌──────▼───────────────────▼────────┐   │
-│              │                        │  │         FastAPI (main.py)          │   │
-│              │                        │  │  ┌────────────┐  ┌─────────────┐  │   │
-│              │                        │  │  │ MQTT Client │  │   CV Engine │  │   │
-│              │                        │  │  │ (sensors)   │  │ YOLO/RF-DETR│  │   │
-│              │                        │  │  │             │  │  + tracking │  │   │
-│              │                        │  │  └────────────┘  └─────────────┘  │   │
-│              │                        │  └───────────────────────────────────┘   │
-└──────────────┘                        └──────────────────────────────────────────┘
+┌──────────────┐                        ┌──────────────────────────────────────────┐
+│  System 01   │                        │        Central Backend (Pi 5)            │
+│  ESP32 MCU   │  MQTT (pub)            │                                          │
+│  (sensors)   │ ──────────────────►    │  ┌─────────────┐    ┌────────────────┐   │
+└──────────────┘  terrahawk/sys-01/     │  │  Mosquitto   │    │   MediaMTX      │   │
+                  sensors               │  │  (MQTT 1883) │    │  (RTSP 8554)   │   │
+┌──────────────┐                        │  └──────┬──────┘    └───────┬────────┘   │
+│  System 02   │  MQTT / MJPEG          │         │                   │            │
+│  ESP32-CAM   │ ──────────────────►    │  ┌──────▼───────────────────▼────────┐   │
+│  (future)    │                        │  │         FastAPI (main.py)          │   │
+└──────────────┘                        │  │                                    │   │
+                                        │  │  ┌────────────┐  ┌─────────────┐  │   │
+┌──────────────┐       WebSocket        │  │  │ MQTT Client │  │   CV Engine │  │   │
+│   Frontend   │ ◄──────────────────    │  │  │ (per-system)│  │ YOLO/RF-DETR│  │   │
+│  (React/TS)  │   /ws/sensors/{id}     │  │  │             │  │ (per-system)│  │   │
+│              │   /ws/cv/{id}          │  │  └────────────┘  └─────────────┘  │   │
+│              │   /systems             │  │                                    │   │
+└──────────────┘                        │  │  ┌──────────────────────────────┐  │   │
+                                        │  │  │ System Registry (systems.json)│  │   │
+                                        │  │  └──────────────────────────────┘  │   │
+                                        │  └───────────────────────────────────┘   │
+                                        └──────────────────────────────────────────┘
 ```
 
 **Data flow:**
 
 1. **Camera** → MediaMTX captures via libcamera, serves RTSP at `rtsp://localhost:8554/stream`
-2. **Video pipeline** → Reads RTSP frames, runs detection (YOLO or RF-DETR) + ByteTrack tracking, updates `cv_state`
-3. **ESP32** → Publishes sensor JSON to MQTT topic `pi/inbox`, MQTT client updates `sensor_state`
-4. **Frontend** → Connects via WebSocket to receive both streams in real time
+2. **Video pipeline** → Per-system reader + inference threads run detection (YOLO or RF-DETR) + ByteTrack tracking, update per-system `cv_state`
+3. **ESP32** → Publishes sensor JSON to namespaced MQTT topic `terrahawk/{system_id}/sensors`, MQTT client routes to per-system `sensor_state`
+4. **Frontend** → Connects via WebSocket to receive per-system streams, fetches system registry from `GET /systems`
+
+---
+
+## Distributed System Registry
+
+TerraHawk supports multiple distributed systems managed through a central `systems.json` registry. Each **System** is a physical deployment unit with a controller and optional components.
+
+### System Model
+
+```
+System = a deployment unit at a physical location
+├── Controller    (required) — Pi, ESP32, or Arduino
+├── Camera        (optional) — Pi Camera, ESP32-CAM, USB cam
+├── Sensors       (optional) — DHT, soil, light, etc.
+└── Actuators     (optional) — relay, pump, fan, motor
+```
+
+### Registry (`systems.json`)
+
+```json
+{
+  "systems": [
+    {
+      "id": "sys-01",
+      "name": "Chamber 01",
+      "location": "Nursery",
+      "controller": {
+        "type": "raspberry-pi",
+        "ip": "localhost"
+      },
+      "components": {
+        "camera": {
+          "type": "pi-camera-3",
+          "stream_url": "rtsp://localhost:8554/stream",
+          "whep_url": "http://192.168.178.147:8889/stream/whep",
+          "inference": {
+            "enabled": true,
+            "runs_on": "self"
+          }
+        },
+        "sensors": {
+          "type": "esp32-mqtt",
+          "mqtt_topic_in": "terrahawk/sys-01/sensors",
+          "mqtt_topic_out": "terrahawk/sys-01/commands",
+          "capabilities": ["temperature", "humidity", "soil"]
+        },
+        "actuators": {
+          "actions": ["fan_on", "fan_off", "pump_on", "pump_off"]
+        }
+      }
+    }
+  ]
+}
+```
+
+### Adding a New System
+
+1. Edit `systems.json` — add a new entry with `id`, `name`, `location`, `controller`, and `components`
+2. Restart the backend — `./start.sh`
+3. The new system's camera stream gets its own inference pipeline automatically
+4. The frontend picks up the new system from `GET /systems`
+
+### Inference Location (`runs_on`)
+
+| Controller | Camera | `runs_on` | Why |
+|---|---|---|---|
+| **Pi 5** | Pi Camera 3 | `"self"` | Pi has the CPU for YOLO/RF-DETR |
+| **ESP32-CAM** | Built-in OV2640 | `"central"` | ESP32 can't run YOLO — it streams MJPEG, central pulls and runs inference |
+| **Pi Zero** | USB cam | `"central"` | Pi Zero too weak for real-time inference |
+
+### Health Monitoring
+
+A background thread pings each system's controller IP every 30 seconds. Status is returned via `GET /systems` as `"online"`, `"offline"`, or `"unknown"`.
 
 ---
 
@@ -40,15 +120,17 @@ TerraHawk is the edge backend for a smart farm monitoring platform, running on a
 ```
 terra_hawk/
 ├── main.py              # FastAPI app — REST + WebSocket endpoints & lifecycle
-├── video.py             # RTSP capture, unified YOLO/RF-DETR inference, ByteTrack tracking
-├── config.py            # Thread-safe runtime config store, model registry, hot-swap support
-├── mqtt_client.py       # MQTT subscriber — ESP32 sensor ingestion
-├── data_models.py       # Shared state models (sensor_state, cv_state, inference_stats)
+├── video.py             # Per-system RTSP/MJPEG capture, YOLO/RF-DETR inference, ByteTrack
+├── systems.py           # System registry loader, health monitoring, accessors
+├── systems.json         # Distributed system definitions (controllers, cameras, sensors)
+├── config.py            # Thread-safe runtime config, model registry, hot-swap
+├── mqtt_client.py       # MQTT subscriber — namespaced per-system sensor ingestion
+├── data_models.py       # Per-system shared state (sensor, cv, inference stats)
 ├── export.py            # Model export utility (PyTorch → NCNN)
 ├── .env                 # Runtime configuration (model, stream, thresholds)
 ├── pyproject.toml       # Project metadata & dependencies (uv)
 ├── install.sh           # One-shot MediaMTX installer
-├── start.sh             # Launch script (MediaMTX + FastAPI)
+├── start.sh             # Launch script (MediaMTX + FastAPI, binds 0.0.0.0)
 ├── mediamtx/            # MediaMTX binary & config (gitignored)
 │   ├── mediamtx         # Server binary
 │   ├── mediamtx.yml     # Customized config
@@ -62,23 +144,23 @@ terra_hawk/
 
 ### Detection & Tracking (`video.py`)
 
-The CV pipeline runs two daemon threads launched at FastAPI startup:
+On startup, `start_pipelines()` iterates all systems with cameras in the registry and spawns **two daemon threads per system**:
 
 | Thread | Purpose |
 |---|---|
-| **Reader** | Connects to the RTSP stream, reads frames as fast as possible, keeps only the latest frame (drop-oldest strategy to avoid lag) |
-| **Inference** | Grabs the latest frame, runs detection via the active model, updates detections with ByteTrack, writes results to `cv_state` and `inference_stats` |
+| **Reader** | Connects to the system's stream URL (RTSP or MJPEG), reads frames as fast as possible, keeps only the latest frame (drop-oldest) |
+| **Inference** | Grabs the latest frame, runs detection via the shared model, updates per-system `cv_state` and `inference_stats` |
+
+All systems share a single model instance. Each system has its own ByteTrack tracker (independent tracking IDs per camera).
 
 ### Supported Model Families
-
-The inference engine supports two model families through a unified abstraction layer:
 
 | Family | Models | API | Notes |
 |---|---|---|---|
 | **YOLO** (Ultralytics) | `yolo26n`, `best`, any `.pt` / `_ncnn_model` | `model(source, imgsz, conf, iou)` → convert to `sv.Detections` | Supports `imgsz` and `iou` parameters |
 | **RF-DETR** (Roboflow) | `rfdetr-nano`, `rfdetr-small` | `model.predict(frame, threshold)` → returns `sv.Detections` directly | CPU-only on Pi (`device="cpu"`), uses `threshold` only (no `iou`/`imgsz`) |
 
-Three abstraction functions in `video.py` handle the differences:
+Three abstraction functions handle the differences:
 
 - `load_model(name)` — instantiates the correct model class
 - `run_inference(model, frame, cfg)` — calls the appropriate predict API
@@ -86,7 +168,7 @@ Three abstraction functions in `video.py` handle the differences:
 
 ### Model Hot-Swap
 
-Models can be changed at runtime via `PUT /settings` without restarting the server. The inference thread checks for swap requests each iteration, loads the new model, and resets the tracker.
+Models can be changed at runtime via `PUT /settings` without restarting the server. The inference thread checks for swap requests each iteration, loads the new model, and resets all per-system trackers.
 
 ### Available Models
 
@@ -98,9 +180,9 @@ Models can be changed at runtime via `PUT /settings` without restarting the serv
 | `rfdetr-nano` | RF-DETR | ~349 MB | Auto-downloaded on first use |
 | `rfdetr-small` | RF-DETR | ~349 MB | Auto-downloaded on first use |
 
-**Tracker:** [ByteTrack](https://github.com/roboflow/supervision) via the Supervision library — assigns persistent `tracker_id`s to detected objects across frames. Works with both model families since both output `sv.Detections`.
+**Tracker:** [ByteTrack](https://github.com/roboflow/supervision) via Supervision — per-system persistent `tracker_id`s across frames.
 
-### Output Format (`cv_state`)
+### Output Format (`cv_state` — per system)
 
 ```json
 {
@@ -122,25 +204,13 @@ Models can be changed at runtime via `PUT /settings` without restarting the serv
 }
 ```
 
-All bounding box coordinates are **normalized** (0.0–1.0) relative to the frame resolution, making them resolution-independent for the frontend.
-
-### Inference Stats (`inference_stats`)
-
-Updated every frame, exposed via `GET /settings`:
-
-```json
-{
-  "fps": 12.3,
-  "latency_ms": 81.2,
-  "active_tracks": 3
-}
-```
+All bounding box coordinates are **normalized** (0.0–1.0), resolution-independent.
 
 ---
 
 ## Runtime Configuration (`config.py`)
 
-All runtime settings are centralised in a thread-safe config module, replacing scattered `.env` reads. Settings can be changed at runtime via the REST API without restarting the server.
+Thread-safe config store. Settings can be changed at runtime via the REST API without restarting.
 
 ### Environment Variables (`.env`)
 
@@ -165,22 +235,20 @@ IOU=0.7
 | Variable | Default | Description |
 |---|---|---|
 | `HOST` | `localhost` | RTSP stream host |
-| `RECONNECT_DELAY` | `3` | Seconds to wait before reconnecting on stream failure |
+| `RECONNECT_DELAY` | `3` | Seconds before reconnecting on stream failure |
 | `MAX_CONSECUTIVE_FAILURES` | `10` | Frame read failures before triggering reconnect |
-| `MODEL` | `yolo26n` | Model name — see available models table above |
-| `IMGSZ` | `640` | Inference input resolution (YOLO only, ignored by RF-DETR) |
-| `CONFIDENCE` | `0.5` | Minimum detection confidence threshold |
-| `IOU` | `0.7` | NMS IoU threshold (YOLO only, ignored by RF-DETR) |
+| `MODEL` | `yolo26n` | Model name — see available models table |
+| `IMGSZ` | `640` | Inference resolution (YOLO only) |
+| `CONFIDENCE` | `0.5` | Minimum detection confidence |
+| `IOU` | `0.7` | NMS IoU threshold (YOLO only) |
 
 ### Model Export (`export.py`)
 
-Utility script to export a YOLO model to **NCNN** format with FP16 quantization for faster edge inference:
+Export YOLO to NCNN with FP16 quantization:
 
 ```bash
 uv run python export.py
 ```
-
-This produces an NCNN model directory that can be referenced in `.env` as `MODEL=yolo26n_ncnn_model` for optimized ARM inference.
 
 ---
 
@@ -188,34 +256,34 @@ This produces an NCNN model directory that can be referenced in `.env` as `MODEL
 
 ### Protocol
 
-The ESP32 microcontroller publishes sensor readings over **MQTT** to a local Mosquitto broker running on the Pi.
+ESP32 microcontrollers publish sensor readings over MQTT to a local Mosquitto broker. Topics are **namespaced by system ID**.
 
 | Parameter | Value |
 |---|---|
 | **Broker** | `localhost:1883` |
-| **Subscribe topic** | `pi/inbox` (Pi listens) |
-| **Publish topic** | `esp32/inbox` (available for Pi → ESP32 commands) |
+| **Sensor topic pattern** | `terrahawk/{system_id}/sensors` |
+| **Command topic pattern** | `terrahawk/{system_id}/commands` |
+| **Backend subscribes to** | `terrahawk/+/sensors` (wildcard) |
+| **Legacy support** | `pi/inbox` (routes to default system) |
 | **QoS** | Default (0) |
 
 ### ESP32 Payload Schema
 
-The ESP32 publishes JSON to `pi/inbox`:
+Published to `terrahawk/sys-01/sensors`:
 
 ```json
 {
-  "status": "active",
+  "status": "Online",
   "temperature": 24.5,
   "humidity": 62.3
 }
 ```
 
-### Sensor State (`sensor_state`)
-
-The MQTT client parses incoming messages and updates the shared state:
+### Sensor State (`sensor_state` — per system)
 
 ```json
 {
-  "status": "active",
+  "status": "Online",
   "temperature": 24.5,
   "humidity": 62.3,
   "soil": 0
@@ -224,12 +292,17 @@ The MQTT client parses incoming messages and updates the shared state:
 
 | Field | Type | Source |
 |---|---|---|
-| `status` | `string` | ESP32 (`"active"` / `"idle"`) |
+| `status` | `string` | ESP32 (`"Online"` / `"idle"`) |
 | `temperature` | `float \| null` | DHT sensor (°C) |
 | `humidity` | `float \| null` | DHT sensor (%) |
-| `soil` | `int` | Soil moisture — reserved (hardcoded `0` pending sensor integration) |
+| `soil` | `int` | Soil moisture — reserved (hardcoded `0`) |
 
-> **Note:** The `soil` field is a placeholder. The soil moisture sensor is planned but not yet wired to the ESP32.
+### Current ESP32 Configuration
+
+- **IP:** 192.168.178.59
+- **Sensor:** DHT11 on pin 13
+- **Publishes to:** `terrahawk/sys-01/sensors`
+- **Subscribes to:** `terrahawk/sys-01/commands`
 
 ---
 
@@ -240,23 +313,31 @@ The MQTT client parses incoming messages and updates the shared state:
 | Endpoint | Type | Description |
 |---|---|---|
 | `GET /ping` | HTTP | Health check |
-| `GET /settings` | HTTP | Current config + defaults + live inference stats |
-| `GET /settings/models` | HTTP | Available models with name, format, and file size |
-| `PUT /settings` | HTTP | Partial config update (model, confidence, IOU, imgsz) — 422 on invalid, 404 on missing model |
-| `WS /ws/sensors` | WebSocket | Pushes `sensor_state` every **200ms** (~5 Hz) |
-| `WS /ws/cv` | WebSocket | Pushes `cv_state` every **20ms** (~50 Hz) |
+| `GET /systems` | HTTP | List all systems with live status |
+| `GET /systems/{system_id}` | HTTP | Single system details |
+| `GET /settings` | HTTP | Current config + defaults + inference stats |
+| `GET /settings/models` | HTTP | Available models with name, format, size |
+| `PUT /settings` | HTTP | Partial config update — 422 on invalid, 404 on missing model |
+| `WS /ws/sensors/{system_id}` | WebSocket | Per-system sensor stream (5 Hz) |
+| `WS /ws/cv/{system_id}` | WebSocket | Per-system CV detection stream (~50 Hz) |
+| `WS /ws/sensors` | WebSocket | Legacy — default system sensor stream |
+| `WS /ws/cv` | WebSocket | Legacy — default system CV stream |
 
 ### Startup
 
-On application startup, `main.py` launches the video pipeline threads (reader + inference) via `start_thread()`. The MQTT client is initialized at module import and begins listening immediately.
+1. System registry loaded from `systems.json`
+2. Per-system state dicts initialised in `data_models.py`
+3. MQTT client connects and subscribes to `terrahawk/+/sensors`
+4. Per-system video pipelines spawned (reader + inference threads per camera)
+5. Health monitoring thread begins pinging controllers
 
-CORS is fully open (`allow_origins=["*"]`) for development — the frontend connects from a separate host.
+CORS is fully open (`allow_origins=["*"]`) for development.
 
 ---
 
 ## MediaMTX — Camera Streaming
 
-MediaMTX captures directly from the Raspberry Pi Camera Module via libcamera and serves the stream over multiple protocols.
+MediaMTX captures from the Raspberry Pi Camera Module via libcamera and serves over multiple protocols.
 
 ### Stream URLs
 
@@ -268,8 +349,6 @@ MediaMTX captures directly from the Raspberry Pi Camera Module via libcamera and
 
 ### Camera Configuration
 
-Default settings in `mediamtx.yml`:
-
 ```yaml
 paths:
   stream:
@@ -279,16 +358,14 @@ paths:
     rpiCameraFPS: 15
 ```
 
-See the `mediamtx.yml.original` file for all available `rpiCamera*` settings (resolution, FPS, autofocus, bitrate, flip, etc.).
-
 ---
 
 ## Prerequisites
 
 - **Raspberry Pi 5** (8GB recommended) running Pi OS Bookworm 64-bit
 - **Raspberry Pi Camera Module** (v2/v3/HQ) — verify with `rpicam-hello`
-- **Mosquitto MQTT broker** — install with `sudo apt install mosquitto`
-- **ESP32** with DHT temperature/humidity sensor, flashed with MQTT publish firmware
+- **Mosquitto MQTT broker** — `sudo apt install mosquitto`
+- **ESP32** with DHT sensor, flashed with MQTT publish firmware
 - **[uv](https://docs.astral.sh/uv/)** — Python package manager
 
 ---
@@ -310,29 +387,15 @@ chmod +x install.sh
 ./install.sh
 ```
 
-This fetches the latest MediaMTX release, extracts it to `mediamtx/`, and patches the config for the Pi camera.
-
 ### 3. Configure `.env`
 
-```env
-# Stream Configuration
-HOST=localhost
-RECONNECT_DELAY=3.0
-MAX_CONSECUTIVE_FAILURES=10
+See [Runtime Configuration](#runtime-configuration-configpy) above.
 
-# Detection & Tracking Configuration
-# MODEL options:
-#   YOLO:     yolo26n, best (local .pt files)
-#   NCNN:     best_ncnn_model (local directory)
-#   RF-DETR:  rfdetr-nano, rfdetr-small (auto-downloaded, CPU-only)
-MODEL=rfdetr-nano
-IMGSZ=640
-CONFIDENCE=0.5
-# IOU is used by YOLO only (RF-DETR does not support NMS IOU threshold)
-IOU=0.7
-```
+### 4. Configure `systems.json`
 
-### 4. Start Mosquitto
+Define your systems. See [Distributed System Registry](#distributed-system-registry) above.
+
+### 5. Start Mosquitto
 
 ```bash
 sudo systemctl start mosquitto
@@ -348,24 +411,20 @@ chmod +x start.sh   # first time only
 ```
 
 This launches:
-1. **MediaMTX** in the background (camera → RTSP stream, logs to `mediamtx/mediamtx.log`)
-2. **FastAPI** via uvicorn in the foreground (with hot reload)
+1. **MediaMTX** in the background (camera → RTSP, logs to `mediamtx/mediamtx.log`)
+2. **FastAPI** via uvicorn on `0.0.0.0:8000` (accessible from all network interfaces)
 
 Press `Ctrl+C` to shut down both processes cleanly.
-
-The API is available at `http://<pi-ip>:8000`.
 
 ---
 
 ## Git Ignored
 
-The following are excluded from version control to save space:
-
 | Path | Reason |
 |---|---|
 | `mediamtx/` | Large binary (~30MB), installed via `install.sh` |
-| `*.pt` | PyTorch model weights (downloaded by Ultralytics on first run) |
-| `*.pth` | RF-DETR pretrained weights (auto-downloaded) |
+| `*.pt` | PyTorch model weights |
+| `*.pth` | RF-DETR pretrained weights |
 | `*_model` | Exported model directories (NCNN) |
 | `.venv/` | Python virtual environment |
 | `.env` | Local configuration |
@@ -382,9 +441,9 @@ From `pyproject.toml` (Python ≥ 3.12):
 |---|---|
 | `fastapi` + `uvicorn` | Async web framework & ASGI server |
 | `ultralytics` | YOLO model loading & inference |
-| `rfdetr` | RF-DETR model loading & inference (Roboflow) |
-| `supervision` | ByteTrack object tracking + detection utilities |
-| `opencv-python` | RTSP frame capture & image processing |
+| `rfdetr` | RF-DETR model loading & inference |
+| `supervision` | ByteTrack tracking + detection utilities |
+| `opencv-python` | RTSP/MJPEG frame capture |
 | `paho-mqtt` | MQTT client for ESP32 sensor data |
 | `ncnn` + `pnnx` | NCNN inference backend & model converter |
 | `python-dotenv` | `.env` file loading |
@@ -398,13 +457,13 @@ From `pyproject.toml` (Python ≥ 3.12):
 | Issue | Cause | Fix |
 |---|---|---|
 | `path 'stream' is not configured` | MediaMTX not reading config | Check `start.sh` passes config path to binary |
-| `WAR configuration file not found` | Binary falling back to CWD | Verify `MEDIAMTX_CONF` path in `start.sh` |
 | `ERR [RPI Camera source] process exited` | libcamera not working | Run `rpicam-hello` to diagnose |
 | Stream connects but drops | Bad resolution/FPS or cable | Check `mediamtx.log` |
-| No sensor data | Mosquitto not running or ESP32 offline | `sudo systemctl status mosquitto` |
-| YOLO model download fails | No internet on Pi | Pre-download `.pt` on another machine, copy over |
-| RF-DETR `Found no NVIDIA driver` | RF-DETR trying to use CUDA on Pi | Ensure `video.py` passes `device="cpu"` to RF-DETR constructors |
-| RF-DETR slow / OOM | 349MB model on 8GB Pi | Use YOLO models for real-time; RF-DETR for accuracy testing |
+| No sensor data | Mosquitto not running, ESP32 offline, or MQTT topics mismatched | Check `sudo systemctl status mosquitto` and verify ESP32 publishes to `terrahawk/{id}/sensors` |
+| RF-DETR `Found no NVIDIA driver` | RF-DETR trying to use CUDA | Ensure `video.py` passes `device="cpu"` |
+| RF-DETR slow / OOM | 349MB model on Pi | Use YOLO models for real-time; RF-DETR for accuracy testing |
+| Frontend can't connect to API | uvicorn binding to localhost only | Ensure `start.sh` has `--host 0.0.0.0` |
+| Duplicate system IDs | Config error in `systems.json` | Each system must have a unique `id` |
 
 ---
 

@@ -3,7 +3,7 @@
     {
       "id": "sys-01",
       "name": "Chamber 01",
-      "location": "Nursery",
+      "location": "Netherlands",
       "controller": {
         "type": "raspberry-pi",
         "ip": "localhost"
