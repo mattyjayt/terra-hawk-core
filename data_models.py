@@ -1,7 +1,8 @@
 sensor_state = {
+    "status": "idle",
     "temperature": None,
     "humidity": None,
-    "status": "idle"
+    "soil": None
 }
 
 cv_state = {
