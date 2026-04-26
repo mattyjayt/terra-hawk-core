@@ -45,4 +45,4 @@ sleep 1
 # ── Start uvicorn in foreground ──────────────────────────────────────────────
 echo "[INFO] Starting uvicorn..."
 cd "$SCRIPT_DIR"
-uv run uvicorn main:app --reload
+uv run uvicorn main:app --reload --host 0.0.0.0

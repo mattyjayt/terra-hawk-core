@@ -1,0 +1,33 @@
+{
+  "systems": [
+    {
+      "id": "sys-01",
+      "name": "Chamber 01",
+      "location": "Nursery",
+      "controller": {
+        "type": "raspberry-pi",
+        "ip": "localhost"
+      },
+      "components": {
+        "camera": {
+          "type": "pi-camera-3",
+          "stream_url": "rtsp://localhost:8554/stream",
+          "whep_url": "http://192.168.178.147:8889/stream/whep",
+          "inference": {
+            "enabled": true,
+            "runs_on": "self"
+          }
+        },
+        "sensors": {
+          "type": "esp32-mqtt",
+          "mqtt_topic_in": "terrahawk/sys-01/sensors",
+          "mqtt_topic_out": "terrahawk/sys-01/commands",
+          "capabilities": ["temperature", "humidity", "soil"]
+        },
+        "actuators": {
+          "actions": ["fan_on", "fan_off", "pump_on", "pump_off"]
+        }
+      }
+    }
+  ]
+}
