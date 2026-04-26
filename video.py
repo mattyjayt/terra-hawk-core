@@ -10,7 +10,7 @@ import supervision as sv
 load_dotenv()
 
 RTSP_URL = f"rtsp://{os.getenv("HOST")}:8554/stream"
-RECONNECT_DELAY = int(os.getenv("RECONNECT_DELAY"))
+RECONNECT_DELAY = float(os.getenv("RECONNECT_DELAY"))
 MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES"))
 VISION_MODEL = os.getenv("MODEL")
 IMGSZ = int(os.getenv("IMGSZ"))
