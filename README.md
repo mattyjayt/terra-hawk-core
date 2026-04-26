@@ -141,7 +141,7 @@ chmod +x start.sh   # first time only
 This will:
 
 1. Start `mediamtx` in the background using `mediamtx/mediamtx.yml`
-2. Write mediamtx logs to `mediamtx.log`
+2. Write mediamtx logs to `mediamtx/mediamtx.log`
 3. Start `uvicorn main:app --reload` in the foreground
 4. Kill mediamtx cleanly on `Ctrl+C`
 

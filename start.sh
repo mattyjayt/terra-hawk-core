@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MEDIAMTX="$SCRIPT_DIR/mediamtx/mediamtx"
 MEDIAMTX_CONF="$SCRIPT_DIR/mediamtx/mediamtx.yml"
-MEDIAMTX_LOG="$SCRIPT_DIR/mediamtx.log"
+MEDIAMTX_LOG="$SCRIPT_DIR//mediamtx/mediamtx.log"
 
 # ── Sanity checks ────────────────────────────────────────────────────────────
 if [[ ! -x "$MEDIAMTX" ]]; then
