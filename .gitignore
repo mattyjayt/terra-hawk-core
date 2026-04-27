@@ -9,6 +9,7 @@ wheels/
 *.log
 *.pt
 *.pth
+*.onnx
 mediamtx/
 # Virtual environments
 .venv

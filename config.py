@@ -84,6 +84,12 @@ def list_models() -> list[dict]:
         size_mb = os.path.getsize(pt) / (1024 * 1024)
         models.append({"name": name, "format": "pytorch", "file": os.path.basename(pt), "size_mb": round(size_mb, 1)})
 
+    # Local .onnx files (YOLO)
+    for pt in glob.glob(os.path.join(base, "*.onnx")):
+        name = os.path.basename(pt).removesuffix(".onnx") + "_onnx"
+        size_mb = os.path.getsize(pt) / (1024 * 1024)
+        models.append({"name": name, "format": "onnx", "file": os.path.basename(pt), "size_mb": round(size_mb, 1)})
+
     # Local NCNN model directories
     for d in glob.glob(os.path.join(base, "*_ncnn_model")):
         if os.path.isdir(d):

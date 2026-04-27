@@ -6,4 +6,4 @@ load_dotenv()
 
 model = YOLO(f"{os.getenv("MODEL")}")
 
-model.export(format="ncnn", half=True)
+model.export(format="onnx", half=True)
