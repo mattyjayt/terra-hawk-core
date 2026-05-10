@@ -1,11 +1,26 @@
-import paho.mqtt.client as mqtt
-from data_models import update_sensor_state
-from systems import get_systems_with_sensors
+import os
 import json
+from paho import mqtt
+import paho.mqtt.client as paho
+from dotenv import load_dotenv
+from data_models import update_sensor_state
 
-BROKER = "localhost"
-PORT = 1883
+load_dotenv()
 
+HIVEMQ_HOST         = os.getenv("HIVEMQ_HOST")
+HIVEMQ_PORT         = int(os.getenv("HIVEMQ_PORT"))
+HIVEMQ_USERNAME     = os.getenv("HIVEMQ_USERNAME")
+HIVEMQ_PASSWORD     = os.getenv("HIVEMQ_PASSWORD")
+HIVEMQ_SUBSCRIPTION = os.getenv("HIVEMQ_SUBSCRIPTION")
+HIVEMQ_PUBLICATION  = os.getenv("HIVEMQ_PUBLICATION")
+
+# setting callbacks for different events to see if it works, print the message etc.
+def on_connect(client, userdata, flags, rc, properties=None):
+    print("CONNACK received with code %s." % rc)
+
+# print which topic was subscribed to
+def on_subscribe(client, userdata, mid, granted_qos, properties=None):
+    print("Subscribed: " + str(mid) + " " + str(granted_qos))
 
 def on_message(client, userdata, msg):
     """Route incoming MQTT messages to the correct system's sensor state."""
@@ -37,17 +52,20 @@ def on_message(client, userdata, msg):
 
 
 class MQTT_Client:
-    client: mqtt.Client
+    client: paho.Client
 
     def __init__(self) -> None:
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.client = paho.Client(client_id="", userdata=None, protocol=paho.MQTTv5)
+        self.client.on_connect = on_connect
+        # enable TLS for secure connection
+        self.client.tls_set(tls_version=mqtt.client.ssl.PROTOCOL_TLS)
+        # set username and password
+        self.client.username_pw_set(HIVEMQ_USERNAME, HIVEMQ_PASSWORD)
+        self.client.connect(HIVEMQ_HOST, HIVEMQ_PORT, 60)
+
+        self.client.on_subscribe = on_subscribe
         self.client.on_message = on_message
-        self.client.connect(BROKER, PORT, 60)
 
         # Subscribe to namespaced topics (wildcard)
-        self.client.subscribe("terrahawk/+/sensors")
-
-        # Also keep legacy topic for backwards compatibility
-        self.client.subscribe("pi/inbox")
-
+        self.client.subscribe(HIVEMQ_SUBSCRIPTION)
         self.client.loop_start()

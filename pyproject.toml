@@ -12,6 +12,7 @@ dependencies = [
     "paho-mqtt>=2.1.0",
     "pnnx>=20260409",
     "python-dotenv>=1.2.2",
+    "rfdetr>=1.6.5",
     "supervision>=0.27.0.post2",
     "ultralytics>=8.4.39",
     "uvicorn>=0.44.0",
