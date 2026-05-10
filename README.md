@@ -13,8 +13,8 @@ The system supports **multiple distributed systems** — each with its own contr
 │  System 01   │                        │        Central Backend (Pi 5)            │
 │  ESP32 MCU   │  MQTT (pub)            │                                          │
 │  (sensors)   │ ──────────────────►    │  ┌─────────────┐    ┌────────────────┐   │
-└──────────────┘  terrahawk/sys-01/     │  │  Mosquitto   │    │   MediaMTX      │   │
-                  sensors               │  │  (MQTT 1883) │    │  (RTSP 8554)   │   │
+└──────────────┘  terrahawk/sys-01/     │  │  HiveMQ Cloud │    │   MediaMTX      │   │
+                  sensors               │  │ (MQTTS 8883) │    │  (RTSP 8554)   │   │
 ┌──────────────┐                        │  └──────┬──────┘    └───────┬────────┘   │
 │  System 02   │  MQTT / MJPEG          │         │                   │            │
 │  ESP32-CAM   │ ──────────────────►    │  ┌──────▼───────────────────▼────────┐   │
@@ -234,6 +234,10 @@ IOU=0.7
 
 | Variable | Default | Description |
 |---|---|---|
+| `MQTT_BROKER` | — | HiveMQ Cloud hostname |
+| `MQTT_PORT` | `8883` | MQTT broker port (TLS) |
+| `MQTT_USER_PI` | — | MQTT username for Pi client |
+| `MQTT_PASS_PI` | — | MQTT password for Pi client |
 | `HOST` | `localhost` | RTSP stream host |
 | `RECONNECT_DELAY` | `3` | Seconds before reconnecting on stream failure |
 | `MAX_CONSECUTIVE_FAILURES` | `10` | Frame read failures before triggering reconnect |
@@ -256,11 +260,11 @@ uv run python export.py
 
 ### Protocol
 
-ESP32 microcontrollers publish sensor readings over MQTT to a local Mosquitto broker. Topics are **namespaced by system ID**.
+ESP32 microcontrollers publish sensor readings over MQTT to **HiveMQ Cloud** (TLS, port 8883). Topics are **namespaced by system ID**.
 
 | Parameter | Value |
 |---|---|
-| **Broker** | `localhost:1883` |
+| **Broker** | HiveMQ Cloud (TLS, port 8883) |
 | **Sensor topic pattern** | `terrahawk/{system_id}/sensors` |
 | **Command topic pattern** | `terrahawk/{system_id}/commands` |
 | **Backend subscribes to** | `terrahawk/+/sensors` (wildcard) |
@@ -275,7 +279,8 @@ Published to `terrahawk/sys-01/sensors`:
 {
   "status": "Online",
   "temperature": 24.5,
-  "humidity": 62.3
+  "humidity": 62.3,
+  "soil": 742
 }
 ```
 
@@ -286,6 +291,7 @@ Published to `terrahawk/sys-01/sensors`:
   "status": "Online",
   "temperature": 24.5,
   "humidity": 62.3,
+  "soil": 742,
   "soil": 0
 }
 ```
@@ -295,12 +301,12 @@ Published to `terrahawk/sys-01/sensors`:
 | `status` | `string` | ESP32 (`"Online"` / `"idle"`) |
 | `temperature` | `float \| null` | DHT sensor (°C) |
 | `humidity` | `float \| null` | DHT sensor (%) |
-| `soil` | `int` | Soil moisture — reserved (hardcoded `0`) |
+| `soil` | `int` | Soil moisture (analog pin 36 on ESP32) |
 
 ### Current ESP32 Configuration
 
-- **IP:** 192.168.178.59
-- **Sensor:** DHT11 on pin 13
+- **Broker:** HiveMQ Cloud (TLS, port 8883)
+- **Sensor:** DHT11 on pin 18, soil moisture (analog pin 36), SSD1306 OLED (I2C: SDA=13, SCL=14)
 - **Publishes to:** `terrahawk/sys-01/sensors`
 - **Subscribes to:** `terrahawk/sys-01/commands`
 
@@ -364,8 +370,8 @@ paths:
 
 - **Raspberry Pi 5** (8GB recommended) running Pi OS Bookworm 64-bit
 - **Raspberry Pi Camera Module** (v2/v3/HQ) — verify with `rpicam-hello`
-- **Mosquitto MQTT broker** — `sudo apt install mosquitto`
-- **ESP32** with DHT sensor, flashed with MQTT publish firmware
+- **HiveMQ Cloud account** — MQTT broker (TLS, port 8883)
+- **ESP32** with DHT + soil moisture + OLED, flashed with MQTT/TLS firmware
 - **[uv](https://docs.astral.sh/uv/)** — Python package manager
 
 ---
@@ -395,11 +401,18 @@ See [Runtime Configuration](#runtime-configuration-configpy) above.
 
 Define your systems. See [Distributed System Registry](#distributed-system-registry) above.
 
-### 5. Start Mosquitto
+### 5. Configure MQTT credentials
 
-```bash
-sudo systemctl start mosquitto
+Add HiveMQ Cloud credentials to `.env`:
+
+```env
+MQTT_BROKER=<your-hivemq-host>
+MQTT_PORT=8883
+MQTT_USER_PI=rasp-pi
+MQTT_PASS_PI=<password>
 ```
+
+> **TODO:** TLS cert pinning for production. Currently using `setInsecure()` on ESP32.
 
 ---
 
@@ -459,7 +472,7 @@ From `pyproject.toml` (Python ≥ 3.12):
 | `path 'stream' is not configured` | MediaMTX not reading config | Check `start.sh` passes config path to binary |
 | `ERR [RPI Camera source] process exited` | libcamera not working | Run `rpicam-hello` to diagnose |
 | Stream connects but drops | Bad resolution/FPS or cable | Check `mediamtx.log` |
-| No sensor data | Mosquitto not running, ESP32 offline, or MQTT topics mismatched | Check `sudo systemctl status mosquitto` and verify ESP32 publishes to `terrahawk/{id}/sensors` |
+| No sensor data | HiveMQ Cloud unreachable, ESP32 offline, or MQTT creds wrong | Check `.env` MQTT credentials, verify ESP32 connects to HiveMQ with TLS |
 | RF-DETR `Found no NVIDIA driver` | RF-DETR trying to use CUDA | Ensure `video.py` passes `device="cpu"` |
 | RF-DETR slow / OOM | 349MB model on Pi | Use YOLO models for real-time; RF-DETR for accuracy testing |
 | Frontend can't connect to API | uvicorn binding to localhost only | Ensure `start.sh` has `--host 0.0.0.0` |
