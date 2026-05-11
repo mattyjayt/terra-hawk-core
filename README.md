@@ -364,6 +364,65 @@ paths:
     rpiCameraFPS: 15
 ```
 
+### Production Streaming (Cloudflare Tunnel + coturn)
+
+For public access via `terra-hawk.com`, the stream is served over WebRTC (WHEP) through a Cloudflare Tunnel:
+
+```
+Browser ←→ Cloudflare Tunnel ←→ MediaMTX WHEP (port 8889)
+               (signaling)
+Browser ←→ coturn TURN relay  ←→ MediaMTX WebRTC (UDP 8189)
+               (media)
+```
+
+| Service | Port | Purpose |
+|---|---|---|
+| MediaMTX RTSP | 8554 | Internal — CV pipeline consumes this |
+| MediaMTX HLS | 8888 | Fallback stream (`stream.terra-hawk.com`) |
+| MediaMTX WHEP | 8889 | Primary stream (`rtc.terra-hawk.com`) — ~10ms latency |
+| coturn TURN | 3478 | WebRTC media relay for NAT traversal |
+
+**Cloudflare Tunnel config** (`/etc/cloudflared/config.yml`):
+
+```yaml
+ingress:
+  - hostname: rtc.terra-hawk.com
+    service: http://localhost:8889
+  - hostname: stream.terra-hawk.com
+    service: http://localhost:8888
+  - hostname: api.terra-hawk.com
+    service: http://localhost:8000
+  - service: http_status:404
+```
+
+**coturn config** (`/etc/turnserver.conf`):
+
+```conf
+listening-port=3478
+realm=terra-hawk.com
+static-auth-secret=<secret>
+no-cli
+no-tls
+no-dtls
+no-multicast-peers
+```
+
+**MediaMTX ICE config** (`mediamtx.yml`):
+
+```yaml
+webrtcICEServers2:
+  - url: turn:localhost:3478
+    username: any
+    password: <same-secret-as-coturn>
+```
+
+**Latency comparison:**
+
+| Method | Latency | Notes |
+|---|---|---|
+| HLS through tunnel | ~8000ms | Segment-based, inherent floor |
+| WebRTC (WHEP) through tunnel | ~10ms | Signaling via tunnel, media via TURN |
+
 ---
 
 ## Prerequisites
@@ -393,15 +452,24 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### 3. Configure `.env`
+### 3. Install coturn (production streaming)
+
+```bash
+sudo apt install coturn -y
+sudo systemctl enable coturn
+```
+
+Configure `/etc/turnserver.conf` — see [Production Streaming](#production-streaming-cloudflare-tunnel--coturn) above.
+
+### 4. Configure `.env`
 
 See [Runtime Configuration](#runtime-configuration-configpy) above.
 
-### 4. Configure `systems.json`
+### 5. Configure `systems.json`
 
 Define your systems. See [Distributed System Registry](#distributed-system-registry) above.
 
-### 5. Configure MQTT credentials
+### 6. Configure MQTT credentials
 
 Add HiveMQ Cloud credentials to `.env`:
 
