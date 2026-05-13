@@ -12,8 +12,11 @@ import supervision as sv
 
 load_dotenv()
 
+# Force TCP for RTSP — must be set before any cv2.VideoCapture call
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+
 RECONNECT_DELAY = float(os.getenv("RECONNECT_DELAY", 3))
-MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES", 10))
+MAX_CONSECUTIVE_FAILURES = int(os.getenv("MAX_CONSECUTIVE_FAILURES", 30))
 
 # ── Model registry ──────────────────────────────────────────────────────────
 
@@ -75,7 +78,8 @@ def _get_shared_model(cfg: dict):
 def open_capture(stream_url: str) -> cv2.VideoCapture:
     while True:
         print(f"Connecting to stream: {stream_url}")
-        cap = cv2.VideoCapture(stream_url)
+        cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if cap.isOpened():
             print(f"Successfully connected to {stream_url}")
             return cap

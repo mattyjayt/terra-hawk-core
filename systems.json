@@ -20,12 +20,51 @@
         },
         "sensors": {
           "type": "esp32-mqtt",
-          "mqtt_topic_in": "terrahawk/sys-01/sensors",
-          "mqtt_topic_out": "terrahawk/sys-01/commands",
-          "capabilities": ["temperature", "humidity", "soil"]
+          "mqtt_topic_in": "terrahawk/sys-02/sensors",
+          "mqtt_topic_out": "terrahawk/sys-02/commands",
+          "capabilities": [
+            "temperature",
+            "humidity",
+            "soil"
+          ]
         },
         "actuators": {
-          "actions": ["fan_on", "fan_off", "pump_on", "pump_off"]
+          "actions": [
+            "fan_on",
+            "fan_off",
+            "pump_on",
+            "pump_off"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sys-02",
+      "name": "Chamber 02",
+      "location": "Netherlands",
+      "controller": {
+        "type": "esp32-wrover",
+        "ip": "192.168.178.59"
+      },
+      "components": {
+        "camera": {
+          "type": "esp32-cam-ov3660",
+          "stream_url": "rtsp://localhost:8554/esp32-cam",
+          "whep_url": "http://192.168.178.147:8889/esp32-cam/whep",
+          "inference": {
+            "enabled": true,
+            "runs_on": "central"
+          }
+        },
+        "sensors": {
+          "type": "esp32-mqtt",
+          "mqtt_topic_in": "terrahawk/sys-02/sensors",
+          "mqtt_topic_out": "terrahawk/sys-02/commands",
+          "capabilities": [
+            "temperature",
+            "humidity",
+            "soil"
+          ]
         }
       }
     }
