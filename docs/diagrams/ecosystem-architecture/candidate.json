@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "TerraHawk Ecosystem — Option B target system (concept v1.1)",
+    "output": "diagrams/ecosystem-architecture/ecosystem-architecture.html",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    { "id": "uno-r4", "type": "backend", "label": "Arduino Uno R4 WiFi", "sublabel": "rack-01 · BME280 · pH · pumps", "pos": [40, 110], "size": [180, 70] },
+    { "id": "esp32-node", "type": "backend", "label": "ESP32 node", "sublabel": "chamber-01 · soil", "pos": [40, 230], "size": [180, 70] },
+    { "id": "round-display", "type": "frontend", "label": "ESP32-S3 round display", "sublabel": "Waveshare · status view", "pos": [40, 350], "size": [180, 70] },
+    { "id": "hivemq", "type": "messagebus", "label": "HiveMQ Cloud", "sublabel": "MQTT · terrahawk/v1/…", "pos": [340, 110], "size": [160, 460], "tag": "telemetry · state · event · cmd" },
+    { "id": "supabase", "type": "database", "label": "Supabase", "sublabel": "Postgres · Realtime · Storage · Auth", "pos": [320, 690], "size": [200, 80], "tag": "source of truth" },
+    { "id": "web", "type": "frontend", "label": "terra-hawk.com", "sublabel": "Vercel", "pos": [30, 690], "size": [150, 80] },
+    { "id": "operator", "type": "external", "label": "Operator", "sublabel": "browser", "pos": [30, 840], "size": [150, 64], "icon": "person" },
+    { "id": "arms", "type": "external", "label": "Arms (later)", "sublabel": "ROS 2", "pos": [660, 110], "size": [170, 70] },
+    { "id": "ros-bridge", "type": "backend", "label": "ros ↔ mqtt bridge", "sublabel": "Pi 5 · status · tasks", "pos": [660, 380], "size": [170, 70] },
+    { "id": "ingest", "type": "backend", "label": "Ingest service", "sublabel": "Pi 5 · validates schema", "pos": [660, 500], "size": [170, 70], "tag": "local now → cloud later" },
+    { "id": "perception", "type": "backend", "label": "Scout perception", "sublabel": "Pi 5 · Camera 3 · YOLO", "pos": [940, 250], "size": [200, 70] },
+    { "id": "nav-stack", "type": "backend", "label": "ROS 2 Jazzy stack", "sublabel": "Pi 5 · Nav2 · SLAM · EKF", "pos": [940, 380], "size": [200, 70] },
+    { "id": "scout-mcu", "type": "backend", "label": "ESP32 (WROOM-32)", "sublabel": "micro-ROS · motors · IMU", "pos": [940, 530], "size": [200, 70] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Garden edge (microcontrollers)", "wraps": ["uno-r4", "esp32-node", "round-display"] },
+    { "kind": "region", "label": "Cloud", "wraps": ["hivemq", "supabase"] },
+    { "kind": "region", "label": "Web (Vercel)", "wraps": ["web"] },
+    { "kind": "region", "label": "Scout (Pi 5 + ESP32 micro-ROS)", "wraps": ["ros-bridge", "ingest", "perception", "nav-stack", "scout-mcu"] }
+  ],
+  "connections": [
+    { "id": "r4-telemetry", "from": "uno-r4", "to": "hivemq", "label": "telemetry", "variant": "emphasis" },
+    { "id": "r4-cmd", "from": "hivemq", "to": "uno-r4", "label": "cmd" },
+    { "id": "node-telemetry", "from": "esp32-node", "to": "hivemq", "label": "telemetry", "variant": "emphasis" },
+    { "id": "node-cmd", "from": "hivemq", "to": "esp32-node", "label": "cmd" },
+    { "id": "display-status", "from": "hivemq", "to": "round-display", "label": "status" },
+    { "id": "mqtt-to-ingest", "from": "hivemq", "to": "ingest", "label": "subscribe", "variant": "emphasis" },
+    { "id": "ingest-insert", "from": "ingest", "to": "supabase", "label": "insert readings · events", "variant": "emphasis" },
+    { "id": "db-to-web", "from": "supabase", "to": "web", "label": "Realtime + history", "variant": "emphasis" },
+    { "id": "operator-web", "from": "operator", "to": "web", "label": "views · commands" },
+    { "id": "web-commands", "from": "web", "to": "hivemq", "label": "operator cmd (MQTT)", "fromSide": "top", "toSide": "bottom" },
+    { "id": "bridge-mqtt", "from": "ros-bridge", "to": "hivemq", "label": "robot status · tasks" },
+    { "id": "nav-bridge", "from": "nav-stack", "to": "ros-bridge", "label": "ROS 2 topics" },
+    { "id": "arms-bridge", "from": "arms", "to": "ros-bridge", "label": "ROS 2 (later)", "variant": "dashed" },
+    { "id": "perception-nav", "from": "perception", "to": "nav-stack", "label": "/detections" },
+    { "id": "nav-mcu", "from": "nav-stack", "to": "scout-mcu", "label": "USB serial · micro-ROS" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Garden edge", "items": ["MCUs read sensors, drive pumps/lights and keep local safety rules (e.g. pump max-on) without internet", "Round display only subscribes to status"] },
+    { "dot": "cyan", "title": "Data path", "items": ["Ingest is the only telemetry writer into Supabase", "Ingest developed on the Mac, runs on the Pi (pm2/systemd) until proven, then a cloud container", "Accepted gap: garden readings pause while the Pi is off"] },
+    { "dot": "violet", "title": "Scout", "items": ["Pi 5 + Camera 3 do Scout perception only", "ESP32 runs micro-ROS for motor PWM, wheel ticks and the IMU"] },
+    { "dot": "slate", "title": "Parked", "items": ["Garden timelapse and garden vision (ADR-014)", "ESP32-WROVER camera kept as a spare"] }
+  ]
+}

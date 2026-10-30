@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "13a9a7f3-acef-4ae6-8a3e-a269963e18d1",
+  "status": "current",
+  "command": "deliver",
+  "type": "erd",
+  "input": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/candidate.json",
+  "output": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/data-model-v1.html",
+  "specification": {
+    "sha256": "2314b5bb7adbda3a701f39e4db7b4f0dfa025a37a5c081eeebc2f73b7aeacf3a",
+    "bytes": 11763
+  },
+  "artifact": {
+    "sha256": "86024fcda367b549258748ad15a71782d26892a7a209e57cb366074e5099f52b",
+    "bytes": 897640
+  }
+}

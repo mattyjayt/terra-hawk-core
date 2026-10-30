@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/candidate.json",
+    "sha256": "f7d7b8e9b097acbcd381b7281f293cf28fd11fde8bb775c2dfcde64c06064149",
+    "bytes": 5160
+  },
+  "artifact": {
+    "path": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/ecosystem-architecture.html",
+    "sha256": "5c198072987dfc24d7aef5cf263391df9af41870bfcd2d42af23526b2ccd7524",
+    "bytes": 860880
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/ecosystem-architecture.finalize.json",
+    "summaryReceipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/ecosystem-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/ecosystem-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T20:21:24.461Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3607,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

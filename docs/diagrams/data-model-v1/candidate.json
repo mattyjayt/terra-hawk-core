@@ -1,0 +1,665 @@
+{
+ "schema_version": 1,
+ "diagram_type": "erd",
+ "meta": {
+  "title": "TerraHawk Supabase data model v1 \u2014 DRAFT",
+  "locale": "en",
+  "output": "diagrams/data-model-v1/data-model-v1.html",
+  "quality_profile": "standard",
+  "views": [
+   {
+    "id": "topology",
+    "label": "Topology hub",
+    "focus": [
+     "systems",
+     "devices",
+     "readings",
+     "events",
+     "commands"
+    ],
+    "note": "devices is the hub: every telemetry, event and command row points at one device id (MQTT {device_id})."
+   },
+   {
+    "id": "telemetry",
+    "label": "Telemetry",
+    "focus": [
+     "readings",
+     "readings_5m",
+     "latest",
+     "devices"
+    ],
+    "note": "Raw readings (7\u201314 d) roll up into readings_5m by a scheduled job; latest is a view, not a table."
+   },
+   {
+    "id": "ops",
+    "label": "Operations + auth",
+    "focus": [
+     "events",
+     "commands",
+     "profiles",
+     "user_roles"
+    ],
+    "note": "commands.issued_by is null for automation; roles operator/viewer/admin live in user_roles."
+   },
+   {
+    "id": "vision",
+    "label": "Vision (parked)",
+    "focus": [
+     "detections",
+     "images",
+     "systems"
+    ],
+    "note": "Garden vision is parked: these tables are placeholders, not for v1 migration."
+   }
+  ]
+ },
+ "layout": {
+  "mode": "grid",
+  "gapX": 64,
+  "gapY": 36
+ },
+ "entities": [
+  {
+   "id": "systems",
+   "label": "systems",
+   "tag": "Topology",
+   "row": 0,
+   "col": 0,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "text",
+     "key": "pk"
+    },
+    {
+     "name": "name",
+     "type": "text"
+    },
+    {
+     "name": "kind",
+     "type": "text"
+    },
+    {
+     "name": "location",
+     "type": "text"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz"
+    }
+   ]
+  },
+  {
+   "id": "devices",
+   "label": "devices",
+   "tag": "Topology",
+   "row": 1,
+   "col": 0,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "text",
+     "key": "pk"
+    },
+    {
+     "name": "system_id",
+     "type": "text",
+     "key": "fk",
+     "references": "systems.id"
+    },
+    {
+     "name": "kind",
+     "type": "text"
+    },
+    {
+     "name": "firmware",
+     "type": "text"
+    },
+    {
+     "name": "online",
+     "type": "boolean"
+    },
+    {
+     "name": "last_seen",
+     "type": "timestamptz"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz"
+    }
+   ]
+  },
+  {
+   "id": "readings",
+   "label": "readings",
+   "sublabel": "raw \u00b7 7\u201314 d",
+   "tag": "Telemetry",
+   "row": 0,
+   "col": 1,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "key": "pk"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "device_id",
+     "type": "text",
+     "key": "fk",
+     "references": "devices.id"
+    },
+    {
+     "name": "key",
+     "type": "text"
+    },
+    {
+     "name": "value",
+     "type": "double precision"
+    },
+    {
+     "name": "received_at",
+     "type": "timestamptz"
+    }
+   ]
+  },
+  {
+   "id": "readings_5m",
+   "label": "readings_5m",
+   "sublabel": "5-min aggregates",
+   "tag": "Telemetry",
+   "row": 1,
+   "col": 1,
+   "attributes": [
+    {
+     "name": "bucket",
+     "type": "timestamptz",
+     "key": "pk"
+    },
+    {
+     "name": "device_id",
+     "type": "text",
+     "key": [
+      "pk",
+      "fk"
+     ],
+     "references": "devices.id"
+    },
+    {
+     "name": "key",
+     "type": "text",
+     "key": "pk"
+    },
+    {
+     "name": "min",
+     "type": "double precision"
+    },
+    {
+     "name": "avg",
+     "type": "double precision"
+    },
+    {
+     "name": "max",
+     "type": "double precision"
+    },
+    {
+     "name": "n",
+     "type": "integer"
+    }
+   ]
+  },
+  {
+   "id": "latest",
+   "label": "latest",
+   "sublabel": "VIEW over readings",
+   "tag": "Telemetry",
+   "row": 2,
+   "col": 1,
+   "attributes": [
+    {
+     "name": "device_id",
+     "type": "text"
+    },
+    {
+     "name": "key",
+     "type": "text"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "value",
+     "type": "double precision"
+    }
+   ]
+  },
+  {
+   "id": "events",
+   "label": "events",
+   "tag": "Operations",
+   "row": 0,
+   "col": 2,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "key": "pk"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "device_id",
+     "type": "text",
+     "key": "fk",
+     "references": "devices.id"
+    },
+    {
+     "name": "kind",
+     "type": "text"
+    },
+    {
+     "name": "severity",
+     "type": "text"
+    },
+    {
+     "name": "payload",
+     "type": "jsonb"
+    }
+   ]
+  },
+  {
+   "id": "commands",
+   "label": "commands",
+   "tag": "Operations",
+   "row": 1,
+   "col": 2,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "key": "pk"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "device_id",
+     "type": "text",
+     "key": "fk",
+     "references": "devices.id"
+    },
+    {
+     "name": "action",
+     "type": "text"
+    },
+    {
+     "name": "params",
+     "type": "jsonb"
+    },
+    {
+     "name": "source",
+     "type": "text"
+    },
+    {
+     "name": "issued_by",
+     "type": "uuid",
+     "key": "fk",
+     "references": "profiles.id"
+    },
+    {
+     "name": "status",
+     "type": "text"
+    },
+    {
+     "name": "acked_at",
+     "type": "timestamptz"
+    },
+    {
+     "name": "result",
+     "type": "jsonb"
+    }
+   ]
+  },
+  {
+   "id": "detections",
+   "label": "detections",
+   "sublabel": "PARKED",
+   "tag": "Vision (parked)",
+   "row": 0,
+   "col": 3,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "key": "pk"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "system_id",
+     "type": "text",
+     "key": "fk",
+     "references": "systems.id"
+    },
+    {
+     "name": "source",
+     "type": "text"
+    },
+    {
+     "name": "label",
+     "type": "text"
+    },
+    {
+     "name": "confidence",
+     "type": "real"
+    },
+    {
+     "name": "bbox",
+     "type": "jsonb"
+    },
+    {
+     "name": "image_id",
+     "type": "uuid",
+     "key": "fk",
+     "references": "images.id"
+    }
+   ]
+  },
+  {
+   "id": "images",
+   "label": "images",
+   "sublabel": "PARKED \u00b7 Storage index",
+   "tag": "Vision (parked)",
+   "row": 1,
+   "col": 3,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "key": "pk"
+    },
+    {
+     "name": "ts",
+     "type": "timestamptz"
+    },
+    {
+     "name": "system_id",
+     "type": "text",
+     "key": "fk",
+     "references": "systems.id"
+    },
+    {
+     "name": "device_id",
+     "type": "text",
+     "key": "fk",
+     "references": "devices.id"
+    },
+    {
+     "name": "storage_path",
+     "type": "text",
+     "key": "uk"
+    },
+    {
+     "name": "keep",
+     "type": "boolean"
+    }
+   ]
+  },
+  {
+   "id": "profiles",
+   "label": "profiles",
+   "sublabel": "id = auth.users.id",
+   "tag": "Auth (existing)",
+   "row": 0,
+   "col": 4,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "key": "pk"
+    },
+    {
+     "name": "display_name",
+     "type": "text"
+    },
+    {
+     "name": "avatar_url",
+     "type": "text"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz"
+    },
+    {
+     "name": "updated_at",
+     "type": "timestamptz"
+    }
+   ]
+  },
+  {
+   "id": "user_roles",
+   "label": "user_roles",
+   "tag": "Auth (existing)",
+   "row": 1,
+   "col": 4,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "key": "pk"
+    },
+    {
+     "name": "user_id",
+     "type": "uuid",
+     "key": "fk",
+     "references": "profiles.id"
+    },
+    {
+     "name": "role",
+     "type": "app_role"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz"
+    }
+   ]
+  },
+  {
+   "id": "subscribers",
+   "label": "subscribers",
+   "tag": "Auth (existing)",
+   "row": 2,
+   "col": 4,
+   "attributes": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "key": "pk"
+    },
+    {
+     "name": "email",
+     "type": "text",
+     "key": "uk"
+    },
+    {
+     "name": "user_id",
+     "type": "uuid",
+     "key": "fk",
+     "references": "profiles.id"
+    },
+    {
+     "name": "subscribed",
+     "type": "boolean"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz"
+    }
+   ]
+  }
+ ],
+ "relationships": [
+  {
+   "id": "dev_sys",
+   "from": "devices",
+   "to": "systems",
+   "label": "belongs to",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "rd_dev",
+   "from": "readings",
+   "to": "devices",
+   "label": "measured by",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "r5_dev",
+   "from": "readings_5m",
+   "to": "devices",
+   "label": "aggregates",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "ev_dev",
+   "from": "events",
+   "to": "devices",
+   "label": "raised by",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "cmd_dev",
+   "from": "commands",
+   "to": "devices",
+   "label": "targets",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "cmd_prof",
+   "from": "commands",
+   "to": "profiles",
+   "label": "issued by",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed",
+   "toOptional": true
+  },
+  {
+   "id": "det_sys",
+   "from": "detections",
+   "to": "systems",
+   "label": "observed in",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed"
+  },
+  {
+   "id": "det_img",
+   "from": "detections",
+   "to": "images",
+   "label": "from frame",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed",
+   "toOptional": true
+  },
+  {
+   "id": "img_sys",
+   "from": "images",
+   "to": "systems",
+   "label": "captured in",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed"
+  },
+  {
+   "id": "img_dev",
+   "from": "images",
+   "to": "devices",
+   "label": "camera",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed",
+   "toOptional": true
+  },
+  {
+   "id": "ur_prof",
+   "from": "user_roles",
+   "to": "profiles",
+   "label": "grants",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true
+  },
+  {
+   "id": "sub_prof",
+   "from": "subscribers",
+   "to": "profiles",
+   "label": "linked user",
+   "fromCardinality": "many",
+   "toCardinality": "one",
+   "fromOptional": true,
+   "identifying": false,
+   "variant": "dashed",
+   "toOptional": true
+  }
+ ],
+ "cards": [
+  {
+   "dot": "amber",
+   "title": "DRAFT v1 status",
+   "items": [
+    "Only table purposes come from Concept Design \u00a74; columns are proposed, not migrated.",
+    "Vision tables (detections, images) are parked with garden vision.",
+    "Auth tables already exist in the live project; columns shown are assumed."
+   ]
+  },
+  {
+   "dot": "cyan",
+   "title": "Keys and ids",
+   "items": [
+    "systems/devices use text ids matching MQTT topics (rack-01, rack-01-esp32).",
+    "readings_5m pk is (bucket, device_id, key).",
+    "profiles.id equals auth.users.id; role is enum app_role (operator, viewer, admin)."
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "Retention",
+   "items": [
+    "readings 7\u201314 days; readings_5m long-term.",
+    "events and commands long-term; detections 30 days raw.",
+    "images rows index the Storage bucket (rolling ~90 d, keep=true survives)."
+   ]
+  }
+ ]
+}
