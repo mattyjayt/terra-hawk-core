@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "5d833d81-a884-4f52-bddf-ce8da323577e",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/candidate.json",
+  "output": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/ecosystem-architecture/ecosystem-architecture.html",
+  "specification": {
+    "sha256": "f7d7b8e9b097acbcd381b7281f293cf28fd11fde8bb775c2dfcde64c06064149",
+    "bytes": 5160
+  },
+  "artifact": {
+    "sha256": "5c198072987dfc24d7aef5cf263391df9af41870bfcd2d42af23526b2ccd7524",
+    "bytes": 860880
+  }
+}

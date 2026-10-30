@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "erd",
+  "quality": "standard",
+  "specification": {
+    "path": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/candidate.json",
+    "sha256": "2314b5bb7adbda3a701f39e4db7b4f0dfa025a37a5c081eeebc2f73b7aeacf3a",
+    "bytes": 11763
+  },
+  "artifact": {
+    "path": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/data-model-v1.html",
+    "sha256": "86024fcda367b549258748ad15a71782d26892a7a209e57cb366074e5099f52b",
+    "bytes": 897640
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/data-model-v1.finalize.json",
+    "summaryReceipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/data-model-v1.finalize-summary.json",
+    "browserCheckReceipt": "/Users/jaimetellie/Documents/Obsidian/Hermes/Projects/TerraHawk Ecosystem/Artifacts/diagrams/data-model-v1/data-model-v1.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-30T20:21:24.461Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 6036,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 5
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "ev_dev",
+            "from": "events",
+            "to": "devices",
+            "label": "raised by",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "bends": 4,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "cmd_dev",
+            "from": "commands",
+            "to": "devices",
+            "label": "targets",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "bends": 3,
+          "stretch": 1.079
+        },
+        {
+          "relationship": {
+            "id": "cmd_prof",
+            "from": "commands",
+            "to": "profiles",
+            "label": "issued by",
+            "collectionIndex": 5,
+            "artifactIndex": 6
+          },
+          "bends": 4,
+          "stretch": 1.157
+        },
+        {
+          "relationship": {
+            "id": "det_sys",
+            "from": "detections",
+            "to": "systems",
+            "label": "observed in",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "bends": 4,
+          "stretch": 1.177
+        },
+        {
+          "relationship": {
+            "id": "img_sys",
+            "from": "images",
+            "to": "systems",
+            "label": "captured in",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "bends": 4,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "repair": "Advisory only: this mode places or routes these relationships itself. Report them; do not remove relationships or meaning to reduce crossings."
+  }
+}
